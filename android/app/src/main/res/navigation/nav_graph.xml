@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.circpros.micahpod.ui.LoginFragment"
+        android:label="@string/login">
+        <action
+            android:id="@+id/action_login_to_feed"
+            app:destination="@id/feedFragment"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/feedFragment"
+        android:name="com.circpros.micahpod.ui.FeedFragment"
+        android:label="Feed" />
+
+    <fragment
+        android:id="@+id/podcastListFragment"
+        android:name="com.circpros.micahpod.ui.PodcastListFragment"
+        android:label="@string/podcasts">
+        <action
+            android:id="@+id/action_podcasts_to_episodes"
+            app:destination="@id/episodeListFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/episodeListFragment"
+        android:name="com.circpros.micahpod.ui.EpisodeListFragment"
+        android:label="@string/episodes">
+        <argument
+            android:name="podcastId"
+            app:argType="integer" />
+        <argument
+            android:name="podcastTitle"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/episodeDetailFragment"
+        android:name="com.circpros.micahpod.ui.EpisodeDetailFragment"
+        android:label="Episode">
+        <argument
+            android:name="episodeId"
+            app:argType="integer" />
+        <argument
+            android:name="description"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/playerFragment"
+        android:name="com.circpros.micahpod.ui.PlayerFragment"
+        android:label="@string/player">
+        <argument
+            android:name="episodeId"
+            app:argType="integer"
+            android:defaultValue="0" />
+        <argument
+            android:name="episodeTitle"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="episodeUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="artworkUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/queueFragment"
+        android:name="com.circpros.micahpod.ui.QueueFragment"
+        android:label="@string/queue" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.circpros.micahpod.ui.SettingsFragment"
+        android:label="@string/settings" />
+</navigation>

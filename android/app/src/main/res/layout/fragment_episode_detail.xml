@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Episode header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/detailArtwork"
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:scaleType="centerCrop"
+                android:contentDescription="Artwork"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Medium" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp">
+
+                <TextView
+                    android:id="@+id/detailTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceTitleMedium"
+                    android:maxLines="3"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/detailPodcast"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorPrimary"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:id="@+id/detailMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:alpha="0.6"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Played / Recommended badges -->
+        <LinearLayout
+            android:id="@+id/badgeRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/playedBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✓ Played"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:background="@android:color/transparent"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone"
+                android:layout_marginEnd="12dp" />
+
+            <TextView
+                android:id="@+id/recBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔥 Recommended"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Action buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/detailPlayButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                app:icon="@drawable/ic_play"
+                android:text="Play" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/detailQueueButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="+ Queue" />
+        </LinearLayout>
+
+        <!-- Star rating -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Your Rating"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:layout_marginEnd="12dp" />
+
+            <TextView
+                android:id="@+id/star1"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="★"
+                android:textSize="24sp"
+                android:textColor="?attr/colorOutline" />
+            <TextView
+                android:id="@+id/star2"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="★"
+                android:textSize="24sp"
+                android:textColor="?attr/colorOutline" />
+            <TextView
+                android:id="@+id/star3"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="★"
+                android:textSize="24sp"
+                android:textColor="?attr/colorOutline" />
+            <TextView
+                android:id="@+id/star4"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="★"
+                android:textSize="24sp"
+                android:textColor="?attr/colorOutline" />
+            <TextView
+                android:id="@+id/star5"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="★"
+                android:textSize="24sp"
+                android:textColor="?attr/colorOutline" />
+        </LinearLayout>
+
+        <!-- Tags -->
+        <TextView
+            android:id="@+id/tagsHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Tags"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/tagsChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
+
+        <!-- Description -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Description"
+            android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+        <TextView
+            android:id="@+id/detailDescription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:alpha="0.8"
+            android:maxLines="6"
+            android:ellipsize="end" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/readMoreButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Read more" />
+
+        <!-- Comments -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="20dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Discussion"
+                android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+            <TextView
+                android:id="@+id/commentCountText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:alpha="0.6" />
+        </LinearLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Add a comment…"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/commentInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="2"
+                android:maxLines="5" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/postCommentButton"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:text="Post" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/commentsRecycler"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:nestedScrollingEnabled="false" />
+
+        <TextView
+            android:id="@+id/noCommentsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="No comments yet. Be the first!"
+            android:textAlignment="center"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:alpha="0.5" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

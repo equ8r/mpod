@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/mainContent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorPrimary"
+            android:theme="@style/ThemeOverlay.Material3.ActionBar"
+            app:titleTextColor="@color/md_theme_on_primary" />
+
+        <fragment
+            android:id="@+id/nav_host_fragment"
+            android:name="androidx.navigation.fragment.NavHostFragment"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            app:defaultNavHost="true"
+            app:navGraph="@navigation/nav_graph" />
+
+        <!-- Now Playing mini-bar -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/nowPlayingBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:cardElevation="8dp"
+            app:cardCornerRadius="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="4dp"
+                android:background="?attr/colorSurfaceVariant">
+
+                <ImageView
+                    android:id="@+id/nowPlayingArt"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:scaleType="centerCrop"
+                    android:contentDescription="Now playing artwork" />
+
+                <TextView
+                    android:id="@+id/nowPlayingTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/nowPlayingPlayPause"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    app:icon="@drawable/ic_play"
+                    app:iconTint="?attr/colorOnSurfaceVariant"
+                    android:contentDescription="Play/Pause" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottomNav"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:menu="@menu/bottom_nav" />
+    </LinearLayout>
+
+    <!-- Compact cover / flip-phone exterior layout -->
+    <LinearLayout
+        android:id="@+id/coverPlayerPanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="16dp"
+        android:background="?attr/colorSurface"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ImageView
+            android:id="@+id/coverArt"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:scaleType="centerCrop"
+            android:contentDescription="Cover artwork" />
+
+        <TextView
+            android:id="@+id/coverTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <TextView
+            android:id="@+id/coverPosition"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/coverSkipBack"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                app:icon="@drawable/ic_skip_back_15"
+                android:contentDescription="Skip back 30 seconds" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/coverPlayPause"
+                style="@style/Widget.Material3.Button.IconButton.Filled"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_marginHorizontal="12dp"
+                app:icon="@drawable/ic_play"
+                android:contentDescription="Play or pause" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/coverSkipForward"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                app:icon="@drawable/ic_skip_forward_30"
+                android:contentDescription="Skip forward 30 seconds" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

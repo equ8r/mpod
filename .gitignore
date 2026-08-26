@@ -1,0 +1,28 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+web/.env.parent
+
+# Web runtime
+web/logs/
+web/downloads/*.apk
+
+# Android
+android/.gradle/
+android/**/build/
+android/local.properties
+android/*.apk
+android/**/*.apk
+android/build-log*.txt
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Docs / local captures
+docs/playback-logs/
+*.log

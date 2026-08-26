@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/feedFragment"
+        android:icon="@drawable/ic_feed"
+        android:title="@string/feed" />
+    <item
+        android:id="@+id/podcastListFragment"
+        android:icon="@drawable/ic_podcasts"
+        android:title="@string/podcasts" />
+    <item
+        android:id="@+id/playerFragment"
+        android:icon="@drawable/ic_play"
+        android:title="@string/player" />
+</menu>
