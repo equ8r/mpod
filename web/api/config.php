@@ -542,6 +542,9 @@ function refresh_podcast_feeds(?int $podcastId = null): array {
                 if (count($parts) === 3) $durSec = (int)$parts[0] * 3600 + (int)$parts[1] * 60 + (int)$parts[2];
                 elseif (count($parts) === 2) $durSec = (int)$parts[0] * 60 + (int)$parts[1];
                 else $durSec = (int)$dur;
+                // Cap to signed 32-bit max to prevent Android Int overflow
+                if ($durSec > 2147483647) $durSec = 2147483647;
+                if ($durSec < 0) $durSec = null;
             }
 
             $enclosure = $item->enclosure;

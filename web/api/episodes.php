@@ -65,7 +65,25 @@ if ($id) {
     );
     $tagStmt->execute([$id]);
     $episode['tags'] = $tagStmt->fetchAll();
-    json_response(['episode' => $episode]);
+    $sanitized = [
+        'id' => (int)$episode['id'],
+        'podcast_id' => isset($episode['podcast_id']) ? (int)$episode['podcast_id'] : null,
+        'title' => (string)($episode['title'] ?? ''),
+        'description' => $episode['description'] ?? null,
+        'description_html' => $episode['description_html'] ?? null,
+        'pub_date' => $episode['pub_date'] ?? null,
+        'duration_seconds' => isset($episode['duration_seconds']) && $episode['duration_seconds'] !== null
+            ? min((int)$episode['duration_seconds'], 2147483647)
+            : null,
+        'audio_url' => $episode['audio_url'] ?? null,
+        'artwork_url' => $episode['artwork_url'] ?? null,
+        'podcast_title' => $episode['podcast_title'] ?? null,
+        'podcast_artwork' => $episode['podcast_artwork'] ?? null,
+        'user_rating' => isset($episode['user_rating']) ? (int)$episode['user_rating'] : null,
+        'rec_score' => isset($episode['rec_score']) ? (float)$episode['rec_score'] : null,
+        'tags' => $episode['tags'] ?? [],
+    ];
+    json_response(['episode' => $sanitized]);
 }
 
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -162,6 +180,27 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $episodes = $stmt->fetchAll();
 
+function sanitize_episode(array $row): array {
+    return [
+        'id' => (int)$row['id'],
+        'podcast_id' => isset($row['podcast_id']) ? (int)$row['podcast_id'] : null,
+        'title' => (string)($row['title'] ?? ''),
+        'description' => $row['description'] ?? null,
+        'description_html' => $row['description_html'] ?? null,
+        'pub_date' => $row['pub_date'] ?? null,
+        'duration_seconds' => isset($row['duration_seconds']) && $row['duration_seconds'] !== null
+            ? min((int)$row['duration_seconds'], 2147483647)
+            : null,
+        'audio_url' => $row['audio_url'] ?? null,
+        'artwork_url' => $row['artwork_url'] ?? null,
+        'podcast_title' => $row['podcast_title'] ?? null,
+        'podcast_artwork' => $row['podcast_artwork'] ?? null,
+        'user_rating' => isset($row['user_rating']) ? (int)$row['user_rating'] : null,
+        'rec_score' => isset($row['rec_score']) ? (float)$row['rec_score'] : null,
+        'tags' => $row['tags'] ?? [],
+    ];
+}
+
 if ($episodes) {
     $episodeIds = array_map(fn($row) => (int)$row['id'], $episodes);
     $inClause = implode(',', array_fill(0, count($episodeIds), '?'));
@@ -186,8 +225,10 @@ if ($episodes) {
     }
 }
 
+$sanitizedEpisodes = array_map('sanitize_episode', $episodes);
+
 json_response([
-    'episodes' => $episodes,
+    'episodes' => $sanitizedEpisodes,
     'page' => $page,
     'per_page' => $perPage,
     'total' => $total,

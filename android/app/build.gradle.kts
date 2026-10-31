@@ -11,8 +11,8 @@ android {
         applicationId = "com.circpros.micahpod"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.1.11"
+        versionCode = 14
+        versionName = "1.1.21"
     }
 
     buildFeatures {
@@ -70,4 +70,8 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.guava:guava:32.1.3-android")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("com.google.code.gson:gson:2.10.1")
 }

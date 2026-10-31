@@ -142,32 +142,44 @@ class MicahPodRepository(
         if (!forceRefresh && listCache.isFresh(KEY_PODCASTS)) {
             peekPodcasts()?.let { return RepositoryResult.Success(it) }
         }
-        val response = apiService.getPodcasts()
-        if (response.isSuccessful) {
-            val body = response.body()
-            if (body != null) {
-                listCache.put(KEY_PODCASTS, gson.toJson(body))
-                return RepositoryResult.Success(body.podcasts)
+        return try {
+            val response = apiService.getPodcasts()
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    listCache.put(KEY_PODCASTS, gson.toJson(body))
+                    return RepositoryResult.Success(body.podcasts)
+                }
             }
+            peekPodcasts()?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Unable to load podcasts")
+        } catch (e: Exception) {
+            android.util.Log.e("MicahPodRepository", "getPodcasts parsing failed", e)
+            peekPodcasts()?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Podcast data error: ${e.message?.take(80)}")
         }
-        return peekPodcasts()?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load podcasts")
     }
 
     suspend fun getSubscriptions(forceRefresh: Boolean = false): RepositoryResult<List<Subscription>> {
         if (!forceRefresh && listCache.isFresh(KEY_SUBSCRIPTIONS)) {
             peekSubscriptions()?.let { return RepositoryResult.Success(it) }
         }
-        val response = apiService.getSubscriptions()
-        if (response.isSuccessful) {
-            val body = response.body()
-            if (body != null) {
-                listCache.put(KEY_SUBSCRIPTIONS, gson.toJson(body))
-                return RepositoryResult.Success(body.subscriptions)
+        return try {
+            val response = apiService.getSubscriptions()
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    listCache.put(KEY_SUBSCRIPTIONS, gson.toJson(body))
+                    return RepositoryResult.Success(body.subscriptions)
+                }
             }
+            peekSubscriptions()?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Unable to load subscriptions")
+        } catch (e: Exception) {
+            android.util.Log.e("MicahPodRepository", "getSubscriptions parsing failed", e)
+            peekSubscriptions()?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Subscription data error: ${e.message?.take(80)}")
         }
-        return peekSubscriptions()?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load subscriptions")
     }
 
     suspend fun updateSubscription(podcastId: Int, subscribe: Boolean): RepositoryResult<Unit> {
@@ -190,18 +202,24 @@ class MicahPodRepository(
         if (!forceRefresh && listCache.isFresh(key)) {
             peekEpisodes(key)?.let { return RepositoryResult.Success(it) }
         }
-        val response = apiService.getFeed(50)
-        if (response.isSuccessful) {
-            val body = response.body()
-            if (body != null) {
-                listCache.put(key, gson.toJson(body))
-                // Keep legacy "feed" key in sync for older builds' leftovers.
-                listCache.put("feed", gson.toJson(body))
-                return RepositoryResult.Success(body.episodes)
+        return try {
+            val response = apiService.getFeed(50)
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    listCache.put(key, gson.toJson(body))
+                    // Keep legacy "feed" key in sync for older builds' leftovers.
+                    listCache.put("feed", gson.toJson(body))
+                    return RepositoryResult.Success(body.episodes)
+                }
             }
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Unable to load feed")
+        } catch (e: Exception) {
+            android.util.Log.e("MicahPodRepository", "getFeed parsing failed", e)
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Feed data error: ${e.message?.take(80)}")
         }
-        return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load feed")
     }
 
     suspend fun getEpisodes(podcastId: Int, forceRefresh: Boolean = false): RepositoryResult<List<Episode>> {
@@ -209,16 +227,22 @@ class MicahPodRepository(
         if (!forceRefresh && listCache.isFresh(key)) {
             peekEpisodes(key)?.let { return RepositoryResult.Success(it) }
         }
-        val response = apiService.getEpisodes(podcastId.toString())
-        if (response.isSuccessful) {
-            val body = response.body()
-            if (body != null) {
-                listCache.put(key, gson.toJson(body))
-                return RepositoryResult.Success(body.episodes)
+        return try {
+            val response = apiService.getEpisodes(podcastId.toString())
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    listCache.put(key, gson.toJson(body))
+                    return RepositoryResult.Success(body.episodes)
+                }
             }
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Unable to load episodes")
+        } catch (e: Exception) {
+            android.util.Log.e("MicahPodRepository", "getEpisodes parsing failed for podcast $podcastId", e)
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Episode data error: ${e.message?.take(80)}")
         }
-        return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load episodes")
     }
 
     suspend fun fetchPlayerState(): RepositoryResult<String> {
@@ -420,23 +444,29 @@ class MicahPodRepository(
         if (!forceRefresh && listCache.isFresh(key)) {
             peekEpisodes(key)?.let { return RepositoryResult.Success(it) }
         }
-        val response = apiService.getFilteredEpisodes(
-            page = page,
-            sort = sort,
-            podcastId = podcastId,
-            tag = tag,
-            query = query,
-            recommended = if (recommended) "1" else null
-        )
-        if (response.isSuccessful) {
-            val body = response.body()
-            if (body != null) {
-                listCache.put(key, gson.toJson(body))
-                return RepositoryResult.Success(body.episodes)
+        return try {
+            val response = apiService.getFilteredEpisodes(
+                page = page,
+                sort = sort,
+                podcastId = podcastId,
+                tag = tag,
+                query = query,
+                recommended = if (recommended) "1" else null
+            )
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    listCache.put(key, gson.toJson(body))
+                    return RepositoryResult.Success(body.episodes)
+                }
             }
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Unable to load episodes")
+        } catch (e: Exception) {
+            android.util.Log.e("MicahPodRepository", "getFilteredFeed parsing failed", e)
+            peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                ?: RepositoryResult.Error("Episode data error: ${e.message?.take(80)}")
         }
-        return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load episodes")
     }
 
     suspend fun postComment(episodeId: Int, body: String, parentId: Int? = null): RepositoryResult<Unit> {
