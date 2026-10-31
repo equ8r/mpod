@@ -74,6 +74,20 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="🔥 Recommended" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipUnplayed"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/unplayed_chip" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipPlayed"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/played_chip" />
         </com.google.android.material.chip.ChipGroup>
     </HorizontalScrollView>
 
@@ -107,7 +121,49 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
+            android:padding="24dp"
             android:visibility="gone"
             android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+        <LinearLayout
+            android:id="@+id/emptyLibraryCta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/emptyLibraryTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/empty_library_title"
+                android:textAppearance="?attr/textAppearanceTitleLarge" />
+
+            <TextView
+                android:id="@+id/emptyLibraryBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/empty_library_body"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:alpha="0.8" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/emptyBrowsePodcasts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/browse_podcasts" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/emptyOpenSettings"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/open_settings" />
+        </LinearLayout>
     </FrameLayout>
 </LinearLayout>

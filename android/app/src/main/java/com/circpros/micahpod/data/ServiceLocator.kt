@@ -5,6 +5,7 @@ import com.circpros.micahpod.network.ApiService
 import com.circpros.micahpod.network.AuthManager
 import com.circpros.micahpod.network.CsrfInterceptor
 import com.circpros.micahpod.network.SessionCookieJar
+import com.circpros.micahpod.network.FlexibleBooleanAdapter
 import com.circpros.micahpod.repository.MicahPodRepository
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -15,7 +16,10 @@ import java.util.concurrent.TimeUnit
 
 object ServiceLocator {
     private lateinit var appContext: Context
-    private val gson: Gson = GsonBuilder().create()
+    private val gson: Gson = GsonBuilder()
+        .registerTypeAdapter(Boolean::class.java, FlexibleBooleanAdapter())
+        .registerTypeAdapter(Boolean::class.javaObjectType, FlexibleBooleanAdapter())
+        .create()
 
     lateinit var authManager: AuthManager
         private set
@@ -40,14 +44,28 @@ object ServiceLocator {
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
 
+        // Feed refresh / tag extract / recompute can run for a few minutes.
+        val longOkHttpClient = okHttpClient.newBuilder()
+            .readTimeout(180, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(200, TimeUnit.SECONDS)
+            .build()
+
         val retrofit = Retrofit.Builder()
             .baseUrl("https://micahyoung.us/micahpod/api/")
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
 
+        val longRetrofit = Retrofit.Builder()
+            .baseUrl("https://micahyoung.us/micahpod/api/")
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .client(longOkHttpClient)
+            .build()
+
         val apiService = retrofit.create(ApiService::class.java)
-        repository = MicahPodRepository(appContext, apiService, authManager, gson)
+        val longApiService = longRetrofit.create(ApiService::class.java)
+        repository = MicahPodRepository(appContext, apiService, longApiService, authManager, gson)
         queueManager = com.circpros.micahpod.playback.QueueManager(gson)
     }
 }

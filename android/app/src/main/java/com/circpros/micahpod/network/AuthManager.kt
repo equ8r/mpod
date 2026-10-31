@@ -1,21 +1,13 @@
 package com.circpros.micahpod.network
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 class AuthManager(context: Context) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "micahpod_auth",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs: SharedPreferences = createPrefs(context.applicationContext)
 
     fun saveCredentials(username: String, password: String) {
         prefs.edit()
@@ -78,6 +70,14 @@ class AuthManager(context: Context) {
 
     fun getCsrfToken(): String? = prefs.getString("csrf_token", null)
 
+    fun setUserRole(role: String?) {
+        prefs.edit().putString("user_role", role).apply()
+    }
+
+    fun getUserRole(): String? = prefs.getString("user_role", null)
+
+    fun isAdmin(): Boolean = getUserRole().equals("admin", ignoreCase = true)
+
     fun hasCredentials(): Boolean =
         !getUsername().isNullOrBlank() && !getPassword().isNullOrBlank()
 
@@ -93,5 +93,66 @@ class AuthManager(context: Context) {
 
     fun logout() {
         prefs.edit().clear().apply()
+    }
+
+    companion object {
+        private const val TAG = "AuthManager"
+        private const val PREFS_NAME = "micahpod_auth"
+        private const val FALLBACK_PREFS_NAME = "micahpod_auth_fallback"
+
+        private fun createPrefs(context: Context): SharedPreferences {
+            return try {
+                createEncryptedPrefs(context)
+            } catch (first: Exception) {
+                Log.e(TAG, "EncryptedSharedPreferences failed; clearing and retrying", first)
+                clearEncryptedArtifacts(context)
+                try {
+                    createEncryptedPrefs(context)
+                } catch (retry: Exception) {
+                    Log.e(
+                        TAG,
+                        "EncryptedSharedPreferences retry failed; using plaintext fallback",
+                        retry
+                    )
+                    context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
+                }
+            }
+        }
+
+        private fun createEncryptedPrefs(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+
+        private fun clearEncryptedArtifacts(context: Context) {
+            try {
+                context.deleteSharedPreferences(PREFS_NAME)
+            } catch (e: Exception) {
+                Log.w(TAG, "deleteSharedPreferences failed", e)
+            }
+            // security-crypto may leave keyset files beside the prefs XML.
+            val prefsDir = context.filesDir?.parentFile?.resolve("shared_prefs")
+            if (prefsDir != null && prefsDir.isDirectory) {
+                prefsDir.listFiles()
+                    ?.filter { it.name.startsWith(PREFS_NAME) }
+                    ?.forEach { file ->
+                        try {
+                            if (!file.delete()) {
+                                Log.w(TAG, "Could not delete ${file.name}")
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed deleting ${file.name}", e)
+                        }
+                    }
+            }
+        }
     }
 }

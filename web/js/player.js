@@ -47,24 +47,14 @@ class MicahPlayer {
         this.miniPlayBtn = document.getElementById('player-mini-play');
         this.castBtn = document.getElementById('player-cast');
         this.castingLabel = document.getElementById('player-casting');
-        this.saveProgressBtn = document.getElementById('player-save-progress');
-        this.saveProgressBtnFull = document.getElementById('player-save-progress-full');
-        this.saveStatusEl = document.getElementById('player-save-status');
-        this.saveStatusElFull = document.getElementById('player-save-status-full');
         this.stateKey = 'micahpod_player_state';
         this.queueKey = 'micahpod_queue';
-        this.queueMetaKey = 'micahpod_queue_meta';
         this.csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         this.user = window.MICAHPOD_USER || null;
         this.saveDebounceMs = 12000;
-        this.heartbeatMs = 30000;
         this.serverSaveTimer = null;
-        this.heartbeatTimer = null;
         this.lastServerSave = 0;
-        this.lastAckedPosition = null;
-        this.lastAckedAt = null;
         this.restoreInProgress = false;
-        this.queueSyncInFlight = false;
         this.castContext = null;
         this.castSession = null;
         this.castPlayer = null;
@@ -131,7 +121,6 @@ class MicahPlayer {
             }
             this.updateTime();
             this.updatePositionState();
-            this.updateSaveStatus();
         });
         this.audio.addEventListener('loadedmetadata', () => {
             if (this.isCasting()) return;
@@ -155,14 +144,9 @@ class MicahPlayer {
                 this.fullPlayBtn.textContent = '⏸';
                 this.fullPlayBtn.setAttribute('aria-label', 'Pause');
             }
-            this.startHeartbeat();
-            this.ensureListeningProfile();
         });
         this.audio.addEventListener('pause', () => {
-            if (this.isCasting()) {
-                // Local audio pauses while casting; still persist cast position elsewhere.
-                return;
-            }
+            if (this.isCasting()) return;
             this.playBtn.textContent = '▶';
             this.playBtn.setAttribute('aria-label', 'Play');
             if (this.miniPlayBtn) this.miniPlayBtn.textContent = '▶';
@@ -170,15 +154,8 @@ class MicahPlayer {
                 this.fullPlayBtn.textContent = '▶';
                 this.fullPlayBtn.setAttribute('aria-label', 'Play');
             }
-            this.stopHeartbeat();
-            this.saveToServer({ source: 'auto' });
+            this.saveToServer();
         });
-        if (this.saveProgressBtn) {
-            this.saveProgressBtn.addEventListener('click', () => this.saveProgressManual());
-        }
-        if (this.saveProgressBtnFull) {
-            this.saveProgressBtnFull.addEventListener('click', () => this.saveProgressManual());
-        }
         this.progress.addEventListener('input', () => {
             const duration = this.getDuration();
             if (!isNaN(duration) && duration > 0) {
@@ -304,37 +281,12 @@ class MicahPlayer {
             if (this.user && navigator.sendBeacon) {
                 const state = this.getState();
                 if (state && state.audio_url) {
-                    const position = this.resolvePositionSeconds(state);
-                    const queueMeta = this.getQueueMeta();
                     const payload = JSON.stringify({
                         episode_id: state.id || null,
-                        position_seconds: position,
+                        position_seconds: this.getCurrentTime() || state.current_time || 0,
                         queue: this.getQueue(),
-                        queue_updated_at: queueMeta.updated_at,
-                        clear_queue: !!queueMeta.cleared && this.getQueue().length === 0,
                         speed: this.audio.playbackRate,
                         volume: this.audio.volume,
-                        source: 'beacon',
-                        client_updated_at: new Date().toISOString(),
-                    });
-                    navigator.sendBeacon('api/player_state.php?beacon=1', new Blob([payload], { type: 'application/json' }));
-                    if (state.id) {
-                        navigator.sendBeacon('api/progress.php?beacon=1', new Blob([JSON.stringify({
-                            episode_id: state.id,
-                            position_seconds: position,
-                            source: 'beacon',
-                            client_updated_at: new Date().toISOString(),
-                        })], { type: 'application/json' }));
-                    }
-                } else if (this.user && navigator.sendBeacon) {
-                    // Persist queue even if nothing is actively loaded in the player.
-                    const queueMeta = this.getQueueMeta();
-                    const payload = JSON.stringify({
-                        queue: this.getQueue(),
-                        queue_updated_at: queueMeta.updated_at,
-                        clear_queue: !!queueMeta.cleared && this.getQueue().length === 0,
-                        source: 'beacon',
-                        client_updated_at: new Date().toISOString(),
                     });
                     navigator.sendBeacon('api/player_state.php?beacon=1', new Blob([payload], { type: 'application/json' }));
                 }
@@ -342,7 +294,7 @@ class MicahPlayer {
         });
         document.addEventListener('visibilitychange', () => {
             if (document.hidden && this.user) {
-                this.saveToServer({ source: 'auto' });
+                this.saveToServer();
             }
         });
     }
@@ -350,7 +302,7 @@ class MicahPlayer {
     loadEpisode(episode, options = {}) {
         if (!episode || !episode.audio_url) return;
         if (this.currentEpisode && this.currentEpisode.audio_url && this.currentEpisode.audio_url !== episode.audio_url) {
-            this.saveToServer({ source: 'auto' });
+            this.saveToServer();
         }
         if (!options.skipHistory && this.currentEpisode && this.currentEpisode.audio_url && this.currentEpisode.audio_url !== episode.audio_url) {
             this.playHistory.push(this.currentEpisode);
@@ -362,66 +314,26 @@ class MicahPlayer {
         this.audio.src = episode.audio_url || '';
         this.title.textContent = episode.title;
         this.podcast.textContent = episode.podcast_title || '';
-        this.art.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.png';
+        this.art.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.svg';
         if (this.fullTitle) this.fullTitle.textContent = episode.title;
         if (this.fullPodcast) this.fullPodcast.textContent = episode.podcast_title || '';
-        if (this.fullArt) this.fullArt.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.png';
+        if (this.fullArt) this.fullArt.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.svg';
         this.progress.value = 0;
         if (this.fullProgress) this.fullProgress.value = 0;
         this.updateTime();
-
-        const resumeSeconds = this.getResumeSeconds(episode, options);
-        const applyResume = () => {
-            if (resumeSeconds > 0) {
-                this.seekTo(resumeSeconds);
-                if (!options.silentResume) {
-                    this.showToast(`Resumed at ${this.formatTime(resumeSeconds)}`);
-                }
-            }
-        };
-
         if (this.isCasting()) {
             this.audio.pause();
-            this.loadCastMedia(episode, resumeSeconds > 0 ? resumeSeconds : 0);
-            if (resumeSeconds > 0 && !options.silentResume) {
-                this.showToast(`Resumed at ${this.formatTime(resumeSeconds)}`);
-            }
-            this.startHeartbeat();
+            this.loadCastMedia(episode, 0);
         } else {
-            const onMeta = () => {
-                this.audio.removeEventListener('loadedmetadata', onMeta);
-                applyResume();
-            };
-            this.audio.addEventListener('loadedmetadata', onMeta);
             this.audio.play().catch(() => {});
         }
         this.save(episode);
-        this.saveToServer({ source: 'auto', replaceSession: true });
-        this.ensureListeningProfile(episode, resumeSeconds > 0 ? resumeSeconds : 0);
+        this.saveToServer();
         this.setPlayerArt(episode.artwork_url || episode.podcast_artwork || '');
         this.updateMediaSession(episode);
         // Always expand when loading a new episode
         this.playerBar?.classList.remove('minimized');
         localStorage.removeItem('micahpod_player_minimized');
-        this.updateSaveStatus();
-    }
-
-    getResumeSeconds(episode, options = {}) {
-        if (typeof options.startAt === 'number' && Number.isFinite(options.startAt)) {
-            return Math.max(0, options.startAt);
-        }
-        if (options.forceStart) {
-            return 0;
-        }
-        const position = Number(episode?.position_seconds);
-        if (!this.user || episode?.completed || !Number.isFinite(position) || position <= 30) {
-            return 0;
-        }
-        const duration = Number(episode?.duration_seconds);
-        if (Number.isFinite(duration) && duration > 0 && position >= duration * 0.9) {
-            return 0;
-        }
-        return position;
     }
 
     updateMediaSession(episode) {
@@ -473,7 +385,6 @@ class MicahPlayer {
     save(episode) {
         if (this.restoreInProgress) return;
         const existing = this.getState();
-        const liveTime = this.getCurrentTime();
         const state = {
             ...existing,
             id: episode?.id ?? existing?.id ?? null,
@@ -482,14 +393,13 @@ class MicahPlayer {
             artwork_url: episode?.artwork_url ?? existing?.artwork_url ?? '',
             podcast_artwork: episode?.podcast_artwork ?? existing?.podcast_artwork ?? '',
             audio_url: episode?.audio_url ?? existing?.audio_url ?? '',
-            current_time: Number.isFinite(liveTime) ? liveTime : (Number(existing?.current_time) || 0),
+            current_time: this.getCurrentTime() || existing?.current_time || 0,
             volume: this.isCasting() && this.castPlayer ? this.castPlayer.volumeLevel : this.audio.volume,
             speed: this.audio.playbackRate,
             updated_at: new Date().toISOString(),
         };
         localStorage.setItem(this.stateKey, JSON.stringify(state));
         this.queueServerSave();
-        this.updateSaveStatus();
     }
 
     getState() {
@@ -506,165 +416,31 @@ class MicahPlayer {
         return Number.isFinite(ts) ? ts : 0;
     }
 
-    resolvePositionSeconds(state = null) {
-        const live = this.getCurrentTime();
-        if (Number.isFinite(live) && live >= 0) {
-            return live;
-        }
-        const stored = Number(state?.current_time ?? state?.position_seconds);
-        return Number.isFinite(stored) && stored >= 0 ? stored : 0;
-    }
-
     queueServerSave(force = false) {
         if (!this.user) return;
         if (force) {
-            this.saveToServer({ source: 'auto' });
+            this.saveToServer();
             return;
         }
         if (this.serverSaveTimer) return;
         this.serverSaveTimer = setTimeout(() => {
             this.serverSaveTimer = null;
-            this.saveToServer({ source: 'auto' });
+            this.saveToServer();
         }, this.saveDebounceMs);
     }
 
-    startHeartbeat() {
+    saveToServer() {
         if (!this.user) return;
-        this.stopHeartbeat();
-        this.heartbeatTimer = setInterval(() => {
-            if (!this.currentEpisode && !this.getState()?.audio_url) return;
-            if (this.isCasting()) {
-                this.updateFromCastState();
-                this.saveToServer({ source: 'auto' });
-                return;
-            }
-            if (!this.audio.paused) {
-                this.saveToServer({ source: 'auto' });
-            }
-        }, this.heartbeatMs);
-    }
-
-    stopHeartbeat() {
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
-        }
-    }
-
-    ensureListeningProfile(episode = null, positionSeconds = null) {
-        if (!this.user) return;
-        const ep = episode || this.currentEpisode || this.getState();
-        const episodeId = ep?.id ?? ep?.episode_id ?? null;
-        if (!episodeId) return;
-        const position = positionSeconds != null
-            ? positionSeconds
-            : this.resolvePositionSeconds(this.getState());
-        fetch('api/progress.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': this.csrfToken,
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                episode_id: episodeId,
-                position_seconds: position,
-                source: 'auto',
-                client_updated_at: new Date().toISOString(),
-            }),
-        }).catch(() => {});
-    }
-
-    saveProgressManual() {
-        if (!this.user) {
-            this.showToast('Login to save progress across devices');
-            return;
-        }
         const state = this.getState();
-        if (!state?.id && !this.currentEpisode?.id) {
-            this.showToast('Play an episode first');
-            return;
-        }
-        if (this.saveProgressBtn) this.saveProgressBtn.disabled = true;
-        if (this.saveProgressBtnFull) this.saveProgressBtnFull.disabled = true;
-        this.saveToServer({ force: true, source: 'manual' })
-            .then((data) => {
-                if (data?.ok === false) {
-                    this.showToast('Could not save progress');
-                    return;
-                }
-                const position = this.resolvePositionSeconds(state);
-                this.showToast(`Progress saved at ${this.formatTime(position)}`);
-                this.setSaveStatus(`Saved at ${this.formatTime(position)}`);
-                if (typeof window.refreshContinueListening === 'function') {
-                    window.refreshContinueListening();
-                }
-            })
-            .catch(() => this.showToast('Could not save progress'))
-            .finally(() => {
-                if (this.saveProgressBtn) this.saveProgressBtn.disabled = false;
-                if (this.saveProgressBtnFull) this.saveProgressBtnFull.disabled = false;
-            });
-    }
-
-    setSaveStatus(text) {
-        if (this.saveStatusEl) this.saveStatusEl.textContent = text || '';
-        if (this.saveStatusElFull) this.saveStatusElFull.textContent = text || '';
-    }
-
-    updateSaveStatus() {
-        if (!this.user) {
-            this.setSaveStatus('');
-            return;
-        }
-        if (this.lastAckedPosition == null) {
-            this.setSaveStatus('');
-            return;
-        }
-        const current = this.resolvePositionSeconds(this.getState());
-        if (Math.abs(current - this.lastAckedPosition) > 5) {
-            this.setSaveStatus('Unsaved changes');
-        } else {
-            this.setSaveStatus(`Saved at ${this.formatTime(this.lastAckedPosition)}`);
-        }
-    }
-
-    saveToServer(options = {}) {
-        if (!this.user) return Promise.resolve(null);
-        const state = this.getState();
-        const force = !!options.force;
-        const source = options.source || (force ? 'manual' : 'auto');
-        const clientUpdatedAt = new Date().toISOString();
-        const queueMeta = this.getQueueMeta();
-        const queue = this.getQueue();
+        if (!state || !state.audio_url) return;
         const payload = {
-            queue,
-            queue_updated_at: queueMeta.updated_at,
-            clear_queue: !!options.clearQueue || (!!queueMeta.cleared && queue.length === 0),
-            force_queue: !!options.forceQueue || !!options.clearQueue,
-            force,
-            source,
-            replace_session: !!options.replaceSession || force || source === 'manual',
-            clear_session: !!options.clearSession,
-            client_updated_at: clientUpdatedAt,
+            episode_id: state.id || null,
+            position_seconds: this.getCurrentTime() || state.current_time || 0,
+            queue: this.getQueue(),
+            speed: this.audio.playbackRate,
+            volume: this.isCasting() && this.castPlayer ? this.castPlayer.volumeLevel : this.audio.volume,
         };
-
-        if (options.clearSession) {
-            payload.episode_id = null;
-            payload.position_seconds = 0;
-        } else if (options.queueOnly) {
-            // Queue sync must never rewrite the active episode / progress clocks.
-            payload.skip_progress = true;
-        } else if (state?.audio_url) {
-            payload.episode_id = state.id || null;
-            payload.position_seconds = this.resolvePositionSeconds(state);
-            payload.speed = this.audio.playbackRate;
-            payload.volume = this.isCasting() && this.castPlayer ? this.castPlayer.volumeLevel : this.audio.volume;
-        } else if (!options.allowQueueOnly && !options.forceQueue && !options.clearQueue) {
-            payload.source = source;
-        }
-
-        return fetch('api/player_state.php', {
+        fetch('api/player_state.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -673,30 +449,14 @@ class MicahPlayer {
             credentials: 'same-origin',
             body: JSON.stringify(payload),
         }).then(r => r.json()).then(data => {
-            const applied = data?.applied !== false;
-            const progressApplied = data?.progress_applied !== false;
-            if (options.clearSession && applied) {
-                this.clearLocalPlayerSession({ keepMinimized: true });
-            } else if (state?.audio_url && (applied || progressApplied || force)) {
+            if (data?.state?.updated_at) {
                 const existing = this.getState() || {};
-                const position = payload.position_seconds;
                 localStorage.setItem(this.stateKey, JSON.stringify({
                     ...existing,
-                    current_time: position,
-                    updated_at: data?.state?.updated_at || clientUpdatedAt,
+                    updated_at: data.state.updated_at,
                 }));
-                this.lastAckedPosition = position;
-                this.lastAckedAt = data?.state?.updated_at || clientUpdatedAt;
-                this.lastServerSave = Date.now();
             }
-            if (data?.queue_applied && data?.state) {
-                this.applyQueueFromServer(data.state, { silent: true });
-            } else if (data?.state?.queue && Array.isArray(data.state.queue)) {
-                this.syncQueueMetaFromServer(data.state);
-            }
-            this.updateSaveStatus();
-            return data;
-        }).catch(() => null);
+        }).catch(() => {});
     }
 
     fetchServerState() {
@@ -717,33 +477,23 @@ class MicahPlayer {
             artwork_url: state.artwork_url || '',
             podcast_artwork: state.podcast_artwork || '',
             audio_url: state.audio_url || '',
-            duration_seconds: state.duration_seconds ?? null,
-            position_seconds: state.position_seconds ?? state.current_time ?? 0,
         };
         this.audio.src = state.audio_url;
         this.title.textContent = state.title || 'Now playing';
         this.podcast.textContent = state.podcast_title || '';
-        this.art.src = state.artwork_url || state.podcast_artwork || 'assets/logo.png';
+        this.art.src = state.artwork_url || state.podcast_artwork || 'assets/logo.svg';
         if (this.fullTitle) this.fullTitle.textContent = state.title || 'Now playing';
         if (this.fullPodcast) this.fullPodcast.textContent = state.podcast_title || '';
-        if (this.fullArt) this.fullArt.src = state.artwork_url || state.podcast_artwork || 'assets/logo.png';
-        const seekTo = state.position_seconds ?? state.current_time ?? 0;
-        const onMeta = () => {
-            this.audio.removeEventListener('loadedmetadata', onMeta);
-            if (Number.isFinite(seekTo) && seekTo > 0) {
-                this.audio.currentTime = seekTo;
-            }
-            this.updateTime();
-        };
-        this.audio.addEventListener('loadedmetadata', onMeta);
+        if (this.fullArt) this.fullArt.src = state.artwork_url || state.podcast_artwork || 'assets/logo.svg';
+        this.audio.currentTime = state.position_seconds ?? state.current_time ?? 0;
         this.audio.volume = state.volume ?? 1;
         this.audio.playbackRate = state.speed ?? 1;
         this.volume.value = this.audio.volume;
         this.speed.value = String(this.audio.playbackRate);
         if (this.fullVolume) this.fullVolume.value = String(this.audio.volume);
         if (this.fullSpeed) this.fullSpeed.value = String(this.audio.playbackRate);
-        if (Array.isArray(state.queue) || state.queue_updated_at) {
-            this.mergeQueueFromServer(state, { silent: options.silentQueue });
+        if (Array.isArray(state.queue)) {
+            this.saveQueue(state.queue, { skipServer: true });
         }
         this.setPlayerArt(state.artwork_url || state.podcast_artwork || '');
         this.updateTime();
@@ -759,200 +509,44 @@ class MicahPlayer {
         this.restoreInProgress = false;
     }
 
-    clearLocalPlayerSession(options = {}) {
-        this.currentEpisode = null;
-        this.audio.removeAttribute('src');
-        this.audio.load();
-        if (this.title) this.title.textContent = 'Select an episode to play';
-        if (this.podcast) this.podcast.textContent = '';
-        if (this.art) this.art.src = 'assets/logo.png';
-        if (this.fullTitle) this.fullTitle.textContent = 'Select an episode to play';
-        if (this.fullPodcast) this.fullPodcast.textContent = '';
-        if (this.fullArt) this.fullArt.src = 'assets/logo.png';
-        if (this.progress) this.progress.value = 0;
-        if (this.fullProgress) this.fullProgress.value = 0;
-        this.updateTime();
-        this.setPlayerArt('');
-        localStorage.removeItem(this.stateKey);
-        this.lastAckedPosition = null;
-        this.lastAckedAt = null;
-        this.setSaveStatus('');
-        if (!options.keepMinimized) {
-            this.playerBar?.classList.remove('minimized');
-        }
-    }
-
-    isCompletedSession(state) {
-        if (!state) return false;
-        if (Number(state.completed) === 1) return true;
-        const duration = Number(state.duration_seconds);
-        const position = Number(state.position_seconds ?? state.current_time ?? 0);
-        return Number.isFinite(duration) && duration > 0 && position >= duration * 0.9;
-    }
-
-    adoptServerSession(serverState) {
-        if (!serverState?.audio_url) return;
-        this.applyState({ ...serverState, queue: undefined }, { silentQueue: true });
-        const merged = {
-            id: serverState.episode_id ?? serverState.id ?? null,
-            title: serverState.title ?? '',
-            podcast_title: serverState.podcast_title ?? '',
-            artwork_url: serverState.artwork_url ?? '',
-            podcast_artwork: serverState.podcast_artwork ?? '',
-            audio_url: serverState.audio_url ?? '',
-            current_time: serverState.position_seconds ?? 0,
-            volume: serverState.volume ?? 1,
-            speed: serverState.speed ?? 1,
-            updated_at: serverState.updated_at,
-            duration_seconds: serverState.duration_seconds ?? null,
-        };
-        localStorage.setItem(this.stateKey, JSON.stringify(merged));
-        this.lastAckedPosition = serverState.position_seconds ?? 0;
-        this.lastAckedAt = serverState.updated_at;
-        this.updateSaveStatus();
-    }
-
-    progressEpisodeToSession(ep) {
-        if (!ep?.audio_url) return null;
-        return {
-            episode_id: ep.id ?? ep.episode_id,
-            id: ep.id ?? ep.episode_id,
-            title: ep.title,
-            podcast_title: ep.podcast_title,
-            artwork_url: ep.artwork_url,
-            podcast_artwork: ep.podcast_artwork,
-            audio_url: ep.audio_url,
-            position_seconds: ep.position_seconds || 0,
-            duration_seconds: ep.duration_seconds,
-            updated_at: ep.saved_manually_at || ep.last_played_at || ep.updated_at || new Date().toISOString(),
-            saved_manually_at: ep.saved_manually_at || null,
-            last_played_at: ep.last_played_at || ep.updated_at || null,
-            completed: 0,
-            volume: 1,
-            speed: 1,
-        };
-    }
-
-    pickRestoreSession(serverState, inProgressEpisodes = []) {
-        const candidates = [];
-        if (serverState?.audio_url && serverState.episode_id && !this.isCompletedSession(serverState)) {
-            candidates.push({
-                source: 'session',
-                manualTs: this.parseUpdatedAt(serverState.saved_manually_at),
-                activeTs: this.parseUpdatedAt(serverState.updated_at),
-                state: {
-                    ...serverState,
-                    id: serverState.episode_id,
-                },
-            });
-        }
-        (inProgressEpisodes || []).forEach(ep => {
-            const state = this.progressEpisodeToSession(ep);
-            if (!state || this.isCompletedSession(state)) return;
-            candidates.push({
-                source: 'progress',
-                manualTs: this.parseUpdatedAt(ep.saved_manually_at),
-                activeTs: this.parseUpdatedAt(ep.last_played_at || ep.updated_at),
-                state,
-            });
-        });
-        if (!candidates.length) return null;
-        candidates.sort((a, b) => {
-            if (b.manualTs !== a.manualTs) return b.manualTs - a.manualTs;
-            return b.activeTs - a.activeTs;
-        });
-        return candidates[0];
-    }
-
-    restoreFromInProgress() {
-        return fetch('api/progress.php?action=in_progress&limit=12', { credentials: 'same-origin' })
-            .then(r => r.json())
-            .then(data => {
-                const picked = this.pickRestoreSession(null, data.episodes || []);
-                if (!picked?.state?.audio_url) {
-                    this.clearLocalPlayerSession();
-                    return null;
-                }
-                this.adoptServerSession(picked.state);
-                this.saveToServer({ source: 'auto', replaceSession: true });
-                return picked.state;
-            })
-            .catch(() => {
-                this.clearLocalPlayerSession();
-                return null;
-            });
-    }
-
     restore() {
-        this.queue = this.getQueue();
-        this.renderQueue();
-
+        const state = this.getState();
+        if (state && state.audio_url) {
+            this.applyState({
+                ...state,
+                position_seconds: state.current_time ?? 0,
+                episode_id: state.id ?? null,
+            });
+        }
         if (!this.user) {
-            const state = this.getState();
-            if (state?.audio_url && !this.isCompletedSession(state)) {
-                this.applyState({
-                    ...state,
-                    position_seconds: state.current_time ?? 0,
-                    episode_id: state.id ?? null,
-                    queue: undefined,
-                }, { silentQueue: true });
-            } else if (state?.audio_url) {
-                this.clearLocalPlayerSession();
-            }
             return;
         }
-
-        // Logged-in: choose the best unfinished session from server + bookmarks.
-        // Never push local over server, and never bump progress clocks during restore.
-        Promise.all([
-            this.fetchServerState(),
-            fetch('api/progress.php?action=in_progress&limit=12', { credentials: 'same-origin' })
-                .then(r => r.json())
-                .catch(() => ({ episodes: [] })),
-        ]).then(([serverState, progressData]) => {
-            if (serverState) {
-                this.mergeQueueFromServer(serverState, { silent: false });
-            }
-
-            const picked = this.pickRestoreSession(serverState, progressData.episodes || []);
-            if (!picked?.state?.audio_url) {
-                this.clearLocalPlayerSession();
-                if (this.getQueue().length) {
-                    this.persistQueueToServer();
-                }
-                if (serverState?.episode_id && this.isCompletedSession(serverState)) {
-                    this.saveToServer({
-                        source: 'auto',
-                        replaceSession: true,
-                        clearSession: true,
-                        allowQueueOnly: true,
-                        queueOnly: true,
-                    });
-                }
-                return;
-            }
-
-            const serverEpisodeId = serverState?.episode_id ?? null;
-            const pickedId = picked.state.episode_id ?? picked.state.id ?? null;
-            this.adoptServerSession(picked.state);
-
-            // If bookmarks say a different episode is newer (esp. manual save), promote it.
-            if (String(serverEpisodeId || '') !== String(pickedId || '')) {
-                this.saveToServer({ source: 'auto', replaceSession: true });
-            }
-
-            if (this.getQueue().length) {
-                this.persistQueueToServer();
-            }
-        }).catch(() => {
-            const local = this.getState();
-            if (local?.audio_url && !this.isCompletedSession(local)) {
-                this.applyState({
-                    ...local,
-                    position_seconds: local.current_time ?? 0,
-                    episode_id: local.id ?? null,
-                    queue: undefined,
-                }, { silentQueue: true });
+        this.fetchServerState().then(serverState => {
+            if (!serverState || !serverState.audio_url) return;
+            const localUpdated = this.parseUpdatedAt(state?.updated_at);
+            const serverUpdated = this.parseUpdatedAt(serverState.updated_at);
+            const localEpisodeId = state?.id ?? null;
+            const serverEpisodeId = serverState.episode_id ?? serverState.id ?? null;
+            // Always prefer server if episode changed (cross-device sync)
+            const episodeChanged = serverEpisodeId && localEpisodeId && String(serverEpisodeId) !== String(localEpisodeId);
+            if (!localUpdated || serverUpdated > localUpdated || episodeChanged) {
+                this.applyState(serverState);
+                const merged = {
+                    ...state,
+                    id: serverState.episode_id ?? serverState.id ?? null,
+                    title: serverState.title ?? state?.title ?? '',
+                    podcast_title: serverState.podcast_title ?? state?.podcast_title ?? '',
+                    artwork_url: serverState.artwork_url ?? state?.artwork_url ?? '',
+                    podcast_artwork: serverState.podcast_artwork ?? state?.podcast_artwork ?? '',
+                    audio_url: serverState.audio_url ?? state?.audio_url ?? '',
+                    current_time: serverState.position_seconds ?? 0,
+                    volume: serverState.volume ?? 1,
+                    speed: serverState.speed ?? 1,
+                    updated_at: serverState.updated_at,
+                };
+                localStorage.setItem(this.stateKey, JSON.stringify(merged));
+            } else if (localUpdated > serverUpdated) {
+                this.saveToServer();
             }
         });
     }
@@ -1093,18 +687,7 @@ class MicahPlayer {
         this.castController = new cast.framework.RemotePlayerController(this.castPlayer);
         this.castController.addEventListener(
             cast.framework.RemotePlayerEventType.IS_PAUSED_CHANGED,
-            () => {
-                const playing = !this.castPlayer.isPaused;
-                this.updatePlaybackUI(playing);
-                if (playing) {
-                    this.startHeartbeat();
-                    this.ensureListeningProfile();
-                } else {
-                    this.stopHeartbeat();
-                    this.save();
-                    this.saveToServer({ source: 'auto' });
-                }
-            }
+            () => this.updatePlaybackUI(!this.castPlayer.isPaused)
         );
         this.castController.addEventListener(
             cast.framework.RemotePlayerEventType.CURRENT_TIME_CHANGED,
@@ -1131,10 +714,9 @@ class MicahPlayer {
         this.audio.pause();
         const episode = this.getActiveEpisode();
         if (episode && episode.audio_url) {
-            const startTime = Number.isFinite(this.audio.currentTime) ? this.audio.currentTime : 0;
+            const startTime = this.audio.currentTime || 0;
             this.loadCastMedia(episode, startTime);
         }
-        this.startHeartbeat();
     }
 
     endCastingSession() {
@@ -1144,14 +726,12 @@ class MicahPlayer {
         this.castPlayer = null;
         this.castController = null;
         this.updateCastingUI(false, '');
-        this.saveToServer({ source: 'auto' });
         if (this.audio.src) {
-            this.audio.currentTime = Number.isFinite(resumeTime) ? resumeTime : 0;
+            this.audio.currentTime = resumeTime || 0;
             if (wasPlaying) {
                 this.audio.play().catch(() => {});
             } else {
                 this.updatePlaybackUI(false);
-                this.stopHeartbeat();
             }
         }
     }
@@ -1205,7 +785,6 @@ class MicahPlayer {
         this.updateTime();
         this.updatePositionState();
         this.save();
-        this.updateSaveStatus();
     }
 
     getActiveEpisode() {
@@ -1218,11 +797,9 @@ class MicahPlayer {
 
     getCurrentTime() {
         if (this.isCasting() && this.castPlayer) {
-            const t = Number(this.castPlayer.currentTime);
-            return Number.isFinite(t) ? t : 0;
+            return this.castPlayer.currentTime || 0;
         }
-        const t = Number(this.audio.currentTime);
-        return Number.isFinite(t) ? t : 0;
+        return this.audio.currentTime || 0;
     }
 
     getDuration() {
@@ -1268,12 +845,12 @@ class MicahPlayer {
         if (this.isCasting() && this.castController && !this.castPlayer?.isPaused) {
             this.castController.playOrPause();
             this.save();
-            this.saveToServer({ source: 'auto', replaceSession: true });
+            this.saveToServer();
             return;
         }
         this.audio.pause();
         this.save();
-        this.saveToServer({ source: 'auto', replaceSession: true });
+        this.saveToServer();
     }
 
     seekTo(seconds) {
@@ -1320,118 +897,14 @@ class MicahPlayer {
         }
     }
 
-    getQueueMeta() {
-        try {
-            const meta = JSON.parse(localStorage.getItem(this.queueMetaKey));
-            if (meta && typeof meta === 'object') {
-                return {
-                    updated_at: meta.updated_at || null,
-                    cleared: !!meta.cleared,
-                };
-            }
-        } catch (err) {}
-        return { updated_at: null, cleared: false };
-    }
-
-    setQueueMeta(meta) {
-        localStorage.setItem(this.queueMetaKey, JSON.stringify({
-            updated_at: meta?.updated_at || new Date().toISOString(),
-            cleared: !!meta?.cleared,
-        }));
-    }
-
-    bumpQueueMeta(options = {}) {
-        const cleared = options.cleared === true;
-        this.setQueueMeta({
-            updated_at: new Date().toISOString(),
-            cleared,
-        });
-    }
-
-    syncQueueMetaFromServer(serverState) {
-        if (!serverState) return;
-        if (serverState.queue_updated_at) {
-            this.setQueueMeta({
-                updated_at: new Date(serverState.queue_updated_at).toISOString(),
-                cleared: Array.isArray(serverState.queue) && serverState.queue.length === 0,
-            });
-        }
-    }
-
-    applyQueueFromServer(serverState, options = {}) {
-        const queue = Array.isArray(serverState?.queue) ? serverState.queue : [];
-        this.queue = queue;
-        localStorage.setItem(this.queueKey, JSON.stringify(queue));
-        this.syncQueueMetaFromServer(serverState);
-        this.renderQueue();
-        if (!options.silent && queue.length) {
-            this.showToast(`Queue synced · ${queue.length} episode${queue.length === 1 ? '' : 's'}`);
-        }
-    }
-
-    mergeQueueFromServer(serverState, options = {}) {
-        if (!serverState) return;
-        const serverQueue = Array.isArray(serverState.queue) ? serverState.queue : [];
-        const localQueue = this.getQueue();
-        const localMeta = this.getQueueMeta();
-        const localUpdated = this.parseUpdatedAt(localMeta.updated_at);
-        const serverUpdated = this.parseUpdatedAt(serverState.queue_updated_at);
-
-        // Never replace a nonempty local queue with an empty server queue unless
-        // the server clear is newer than the local queue edit.
-        if (!serverQueue.length && localQueue.length) {
-            if (!serverUpdated || localUpdated >= serverUpdated || !localMeta.cleared) {
-                // Keep local and push it up.
-                this.persistQueueToServer();
-                return;
-            }
-        }
-
-        if (!localQueue.length && serverQueue.length) {
-            this.applyQueueFromServer(serverState, { silent: options.silent });
-            return;
-        }
-
-        if (serverUpdated && (!localUpdated || serverUpdated > localUpdated)) {
-            this.applyQueueFromServer(serverState, { silent: options.silent });
-            return;
-        }
-
-        if (localQueue.length && (!serverQueue.length || localUpdated > serverUpdated)) {
-            this.persistQueueToServer();
-        }
-    }
-
-    persistQueueToServer(options = {}) {
-        if (!this.user || this.queueSyncInFlight) {
-            return Promise.resolve(null);
-        }
-        this.queueSyncInFlight = true;
-        return this.saveToServer({
-            source: 'auto',
-            allowQueueOnly: true,
-            queueOnly: true,
-            forceQueue: !!options.forceQueue,
-            clearQueue: !!options.clearQueue,
-        }).finally(() => {
-            this.queueSyncInFlight = false;
-        });
-    }
-
     saveQueue(queue, options = {}) {
         const skipServer = options.skipServer === true;
-        const cleared = options.cleared === true || (Array.isArray(queue) && queue.length === 0 && options.forceClear);
         this.queue = queue;
         localStorage.setItem(this.queueKey, JSON.stringify(queue));
-        if (!options.keepMeta) {
-            this.bumpQueueMeta({ cleared });
-        }
         this.renderQueue();
         if (!skipServer) {
-            this.persistQueueToServer({
-                forceQueue: !!options.forceClear || cleared,
-                clearQueue: cleared,
-            });
+            this.save();
+            this.queueServerSave(true);
         }
     }
 
@@ -1467,12 +940,8 @@ class MicahPlayer {
 
     removeQueueItem(index) {
         const queue = this.getQueue();
-        const item = queue[index];
         queue.splice(index, 1);
         this.saveQueue(queue);
-        if (item?.title) {
-            this.showToast(`Removed · ${item.title}`);
-        }
     }
 
     moveQueueItem(index, direction) {
@@ -1495,14 +964,7 @@ class MicahPlayer {
     }
 
     clearQueue() {
-        if (!this.getQueue().length) {
-            this.showToast('Queue is already empty');
-            return;
-        }
-        if (!window.confirm('Clear the entire queue?')) {
-            return;
-        }
-        this.saveQueue([], { forceClear: true, cleared: true });
+        this.saveQueue([]);
         this.showToast('Queue cleared');
     }
 
@@ -1737,7 +1199,7 @@ class MicahPlayer {
                 handle.addEventListener('touchstart', (event) => this.handleQueueTouchStart(event, row, index, listEl), { passive: false });
 
                 const art = document.createElement('img');
-                art.src = item.artwork_url || item.podcast_artwork || 'assets/logo.png';
+                art.src = item.artwork_url || item.podcast_artwork || 'assets/logo.svg';
                 art.alt = item.title || 'Artwork';
 
                 const info = document.createElement('div');
@@ -1787,9 +1249,6 @@ class MicahPlayer {
         }
         const next = queue.shift();
         this.saveQueue(queue);
-        if (!silent) {
-            this.showToast(`Playing next · ${next.title || 'episode'}`);
-        }
         this.loadEpisode(next);
     }
 
@@ -1805,23 +1264,7 @@ class MicahPlayer {
     }
 
     handleTrackEnded() {
-        const queue = this.getQueue();
-        if (queue.length) {
-            this.playNextTrack(true);
-            return;
-        }
-        // Mark finished and clear active session so it cannot reclaim the player later.
-        this.save();
-        this.saveToServer({ source: 'auto', replaceSession: true }).finally(() => {
-            this.saveToServer({
-                source: 'auto',
-                replaceSession: true,
-                clearSession: true,
-                allowQueueOnly: true,
-            });
-        });
-        this.clearLocalPlayerSession();
-        this.showToast('Episode finished');
+        this.playNextTrack(true);
     }
 
     openFullscreen() {
@@ -1847,7 +1290,7 @@ class MicahPlayer {
         if (episode) {
             if (this.fullTitle) this.fullTitle.textContent = episode.title || 'Now playing';
             if (this.fullPodcast) this.fullPodcast.textContent = episode.podcast_title || '';
-            if (this.fullArt) this.fullArt.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.png';
+            if (this.fullArt) this.fullArt.src = episode.artwork_url || episode.podcast_artwork || 'assets/logo.svg';
         }
         if (this.fullSpeed) this.fullSpeed.value = this.speed.value;
         if (this.fullVolume) this.fullVolume.value = this.volume.value;

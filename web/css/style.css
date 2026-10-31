@@ -145,6 +145,220 @@ a {
     margin-bottom: 16px;
 }
 
+.subscription-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.subscription-intro {
+    margin: 0 0 14px;
+}
+
+.community-podcasts {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid #1e2a44;
+}
+
+.community-podcasts.hidden {
+    display: none;
+}
+
+.community-podcasts h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+}
+
+.empty-library-cta {
+    background: linear-gradient(160deg, #152038, #10182a);
+    border: 1px solid #243552;
+    border-radius: 18px;
+    padding: 28px 24px;
+    margin-bottom: 24px;
+}
+
+.empty-library-cta.hidden {
+    display: none;
+}
+
+.empty-library-cta h2 {
+    margin: 0 0 8px;
+    font-size: 22px;
+}
+
+.empty-library-cta p {
+    margin: 0 0 16px;
+    color: #9db0c9;
+    max-width: 52ch;
+}
+
+.empty-library-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.library-add {
+    margin: 16px 0 24px;
+    padding: 14px 16px;
+    border: 1px solid #1e2a44;
+    border-radius: 14px;
+    background: rgba(20, 28, 46, 0.55);
+    max-width: 520px;
+}
+
+.library-add h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.library-add h3 + .library-search-row {
+    margin-bottom: 14px;
+}
+
+.library-search-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.library-search-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 360px;
+}
+
+.library-search-row .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.library-search-results {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+    max-width: 520px;
+}
+
+.library-search-item {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #1e2a44;
+    background: #141c2e;
+}
+
+.library-search-item img {
+    width: 40px;
+    height: 40px;
+    border-radius: 7px;
+    object-fit: cover;
+}
+
+.library-search-title {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.library-list-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    max-width: 960px;
+}
+
+.library-list-header h3 {
+    margin: 0;
+}
+
+.library-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    max-width: 960px;
+}
+
+.library-card {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid #1e2a44;
+    background: #141c2e;
+}
+
+.library-card-art {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.library-card-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 2px;
+    line-height: 1.25;
+}
+
+.library-card-meta {
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.library-feed-toggle {
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+.library-card-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.library-card-actions .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.library-empty {
+    padding: 12px 0;
+    max-width: 520px;
+}
+
+@media (max-width: 640px) {
+    .library-add,
+    .library-search-results,
+    .library-list-header,
+    .library-list {
+        max-width: none;
+    }
+
+    .library-search-row {
+        flex-wrap: wrap;
+    }
+
+    .library-search-row input {
+        max-width: none;
+        flex: 1 1 100%;
+    }
+
+    .library-list {
+        grid-template-columns: 1fr;
+    }
+}
+
 .subscription-title {
     display: flex;
     align-items: center;
@@ -272,9 +486,82 @@ a {
     gap: 18px;
 }
 
-@media (min-width: 900px) {
-    .episode-grid {
-        grid-template-columns: repeat(2, 1fr);
+.episode-grid.cols-1 {
+    grid-template-columns: 1fr;
+}
+
+.episode-grid.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.episode-grid.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.episode-grid.cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.layout-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #9db0c9;
+    font-size: 14px;
+}
+
+.layout-control select {
+    min-width: 64px;
+}
+
+/* Keep denser grids readable when the user picks 3–4 columns */
+.episode-grid.cols-3 .episode-card,
+.episode-grid.cols-4 .episode-card {
+    grid-template-columns: 84px 1fr;
+    gap: 12px;
+    padding: 12px;
+}
+
+.episode-grid.cols-3 .episode-art,
+.episode-grid.cols-4 .episode-art {
+    width: 84px;
+    height: 84px;
+}
+
+.episode-grid.cols-3 .episode-desc-text,
+.episode-grid.cols-4 .episode-desc-text {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.episode-grid.cols-4 .episode-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+@media (max-width: 699px) {
+    .episode-grid.cols-2,
+    .episode-grid.cols-3,
+    .episode-grid.cols-4 {
+        grid-template-columns: 1fr;
+    }
+
+    .episode-grid.cols-3 .episode-card,
+    .episode-grid.cols-4 .episode-card {
+        grid-template-columns: 80px 1fr;
+    }
+}
+
+@media (min-width: 700px) and (max-width: 999px) {
+    .episode-grid.cols-3,
+    .episode-grid.cols-4 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1000px) and (max-width: 1279px) {
+    .episode-grid.cols-4 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
@@ -478,6 +765,36 @@ a {
     border-radius: 12px;
     font-size: 12px;
     border: 1px solid rgba(31, 155, 180, 0.5);
+}
+
+.played-banner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    padding: 5px 10px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #e8fbff;
+    background: linear-gradient(90deg, rgba(20, 120, 150, 0.92), rgba(31, 155, 180, 0.88));
+    border-bottom: 1px solid rgba(121, 224, 255, 0.35);
+}
+
+.episode-card.is-played {
+    border-color: rgba(31, 155, 180, 0.45);
+    background: linear-gradient(180deg, rgba(31, 155, 180, 0.08), #141c2e 28%);
+}
+
+.episode-card.is-played .episode-art {
+    margin-top: 22px;
+}
+
+.episode-card.is-played .episode-title {
+    opacity: 0.9;
 }
 
 .in-progress-badge {
@@ -1826,6 +2143,9 @@ a.admin-card-download {
 .settings-container {
     display: grid;
     gap: 24px;
+    max-width: 1000px;
+    width: 100%;
+    margin: 0 auto;
 }
 
 .settings-section {
@@ -1935,12 +2255,6 @@ a.admin-card-download {
     border-radius: 50%;
     border: none;
     background: #f5f7fb;
-}
-
-@media (max-width: 900px) {
-    .episode-grid {
-        grid-template-columns: 1fr;
-    }
 }
 
 @media (max-width: 768px) {

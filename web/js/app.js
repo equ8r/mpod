@@ -7,6 +7,7 @@ const state = {
     sort: 'newest',
     podcastId: '',
     rated: '',
+    played: '',
     recommended: false,
     showAll: false,
     tag: '',
@@ -14,13 +15,62 @@ const state = {
 };
 let userSettings = null;
 let allPodcasts = [];
+let communityPodcasts = [];
 let subscriptionIds = new Set();
+let subscriptionMeta = {};
 let subscriptionsLoaded = false;
 
 const episodeGrid = document.getElementById('episode-grid');
 const pageInfo = document.getElementById('page-info');
+const COLUMN_PREF_KEY = 'micahpod_episode_cols';
+
+function defaultEpisodeColumns() {
+    const width = window.innerWidth || 1200;
+    if (width >= 1280) return 3;
+    if (width >= 900) return 2;
+    return 1;
+}
+
+function applyEpisodeColumns(cols) {
+    if (!episodeGrid) return;
+    const value = Math.min(4, Math.max(1, parseInt(cols, 10) || defaultEpisodeColumns()));
+    episodeGrid.classList.remove('cols-1', 'cols-2', 'cols-3', 'cols-4');
+    episodeGrid.classList.add(`cols-${value}`);
+    const select = document.getElementById('filter-columns');
+    if (select && select.value !== String(value)) {
+        select.value = String(value);
+    }
+    try {
+        localStorage.setItem(COLUMN_PREF_KEY, String(value));
+    } catch (e) {
+        // ignore quota / private mode
+    }
+    return value;
+}
+
+function initEpisodeColumns() {
+    let saved = null;
+    try {
+        saved = localStorage.getItem(COLUMN_PREF_KEY);
+    } catch (e) {
+        saved = null;
+    }
+    const initial = saved && ['1', '2', '3', '4'].includes(saved)
+        ? saved
+        : String(defaultEpisodeColumns());
+    applyEpisodeColumns(initial);
+    const select = document.getElementById('filter-columns');
+    if (select) {
+        select.addEventListener('change', (e) => {
+            applyEpisodeColumns(e.target.value);
+        });
+    }
+}
 const subscriptionPanel = document.getElementById('subscription-panel');
 const subscriptionGrid = document.getElementById('subscription-grid');
+const communitySection = document.getElementById('community-podcasts');
+const communityGrid = document.getElementById('community-grid');
+const emptyLibraryCta = document.getElementById('empty-library-cta');
 const subscriptionCount = document.getElementById('subscription-count');
 const subscriptionCountPanel = document.getElementById('subscription-count-panel');
 const discussionPanel = document.getElementById('discussion-panel');
@@ -194,7 +244,7 @@ function buildRecommendationBadge(episode) {
 
 function buildPlayedBadge() {
     const badge = document.createElement('div');
-    badge.className = 'played-badge';
+    badge.className = 'played-banner';
     badge.textContent = '✓ Played';
     badge.title = 'Played';
     return badge;
@@ -320,6 +370,7 @@ function renderEpisode(episode) {
     const badge = buildRecommendationBadge(episode);
     if (badge) card.appendChild(badge);
     if (episode.completed) {
+        card.classList.add('is-played');
         card.appendChild(buildPlayedBadge());
     } else {
         const progressBadge = buildInProgressBadge(episode);
@@ -711,74 +762,122 @@ function updateSubscriptionCount() {
     if (subscriptionCountPanel) subscriptionCountPanel.textContent = String(count);
 }
 
+function buildPodcastCard(podcast, options = {}) {
+    const card = document.createElement('article');
+    card.className = 'podcast-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `View episodes for ${podcast.title || 'podcast'}`);
+
+    const art = document.createElement('img');
+    art.className = 'podcast-card-art';
+    art.loading = 'lazy';
+    art.src = podcast.artwork_url || 'assets/logo.png';
+
+    const body = document.createElement('div');
+    body.className = 'podcast-card-body';
+
+    const title = document.createElement('div');
+    title.className = 'podcast-card-title';
+    title.textContent = podcast.title || '';
+
+    const meta = document.createElement('div');
+    meta.className = 'podcast-card-meta';
+    const episodeCount = typeof podcast.episode_count === 'number' ? podcast.episode_count : 0;
+    let metaText = `${episodeCount} episode${episodeCount === 1 ? '' : 's'}`;
+    if (options.subscriberCount) {
+        metaText += ` · ${options.subscriberCount} listeners`;
+    }
+    meta.textContent = metaText;
+
+    const openHint = document.createElement('div');
+    openHint.className = 'podcast-card-open muted';
+    openHint.textContent = 'View episodes';
+
+    const button = document.createElement('button');
+    const isSubscribed = subscriptionIds.has(String(podcast.id));
+    button.className = isSubscribed ? 'subscribe-toggle subscribed' : 'subscribe-toggle';
+    button.type = 'button';
+    button.textContent = isSubscribed ? 'Subscribed' : 'Subscribe';
+    button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSubscription(podcast.id);
+    });
+
+    const openPodcast = () => openPodcastView(podcast);
+    card.addEventListener('click', openPodcast);
+    card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openPodcast();
+        }
+    });
+
+    body.appendChild(title);
+    body.appendChild(meta);
+    body.appendChild(openHint);
+    card.appendChild(art);
+    card.appendChild(body);
+    card.appendChild(button);
+    return card;
+}
+
 function renderSubscriptionPanel() {
     if (!subscriptionGrid) return;
     subscriptionGrid.innerHTML = '';
     if (!allPodcasts.length) {
         const empty = document.createElement('div');
         empty.className = 'muted';
-        empty.textContent = 'No podcasts available yet.';
+        empty.textContent = 'No featured podcasts available yet.';
         subscriptionGrid.appendChild(empty);
-        updateSubscriptionCount();
-        return;
+    } else {
+        allPodcasts.forEach(podcast => {
+            subscriptionGrid.appendChild(buildPodcastCard(podcast));
+        });
     }
-    allPodcasts.forEach(podcast => {
-        const card = document.createElement('article');
-        card.className = 'podcast-card';
-        card.tabIndex = 0;
-        card.setAttribute('role', 'button');
-        card.setAttribute('aria-label', `View episodes for ${podcast.title || 'podcast'}`);
-
-        const art = document.createElement('img');
-        art.className = 'podcast-card-art';
-        art.loading = 'lazy';
-        art.src = podcast.artwork_url || 'assets/logo.png';
-
-        const body = document.createElement('div');
-        body.className = 'podcast-card-body';
-
-        const title = document.createElement('div');
-        title.className = 'podcast-card-title';
-        title.textContent = podcast.title || '';
-
-        const meta = document.createElement('div');
-        meta.className = 'podcast-card-meta';
-        const episodeCount = typeof podcast.episode_count === 'number' ? podcast.episode_count : 0;
-        meta.textContent = `${episodeCount} episode${episodeCount === 1 ? '' : 's'}`;
-
-        const openHint = document.createElement('div');
-        openHint.className = 'podcast-card-open muted';
-        openHint.textContent = 'View episodes';
-
-        const button = document.createElement('button');
-        const isSubscribed = subscriptionIds.has(String(podcast.id));
-        button.className = isSubscribed ? 'subscribe-toggle subscribed' : 'subscribe-toggle';
-        button.type = 'button';
-        button.textContent = isSubscribed ? 'Subscribed' : 'Subscribe';
-        button.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleSubscription(podcast.id);
-        });
-
-        const openPodcast = () => openPodcastView(podcast);
-        card.addEventListener('click', openPodcast);
-        card.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openPodcast();
-            }
-        });
-
-        body.appendChild(title);
-        body.appendChild(meta);
-        body.appendChild(openHint);
-
-        card.appendChild(art);
-        card.appendChild(body);
-        card.appendChild(button);
-        subscriptionGrid.appendChild(card);
-    });
+    if (communityGrid && communitySection) {
+        communityGrid.innerHTML = '';
+        if (communityPodcasts.length) {
+            communitySection.classList.remove('hidden');
+            communityPodcasts.forEach(podcast => {
+                communityGrid.appendChild(buildPodcastCard(podcast, {
+                    subscriberCount: podcast.subscriber_count,
+                }));
+            });
+        } else {
+            communitySection.classList.add('hidden');
+        }
+    }
     updateSubscriptionCount();
+}
+
+function loadCommunityPodcasts() {
+    if (!window.MICAHPOD_USER) return;
+    apiGet('api/podcasts.php?action=community').then(data => {
+        communityPodcasts = data.podcasts || [];
+        renderSubscriptionPanel();
+    }).catch(() => {
+        communityPodcasts = [];
+    });
+}
+
+function updateEmptyLibraryCta(data) {
+    if (!emptyLibraryCta) return;
+    const showEmpty = !!(data && data.library_empty) && !state.podcastId && !state.showAll && !state.search;
+    const showHidden = !!(data && data.feed_hidden_only) && !state.podcastId && !state.showAll;
+    if (showEmpty) {
+        emptyLibraryCta.classList.remove('hidden');
+        emptyLibraryCta.querySelector('h2').textContent = 'Your feed is ready for something new';
+        emptyLibraryCta.querySelector('p').textContent =
+            'Looks like you’ve cleared your library. Add a featured show, see what other listeners enjoy, or bring your own feed.';
+    } else if (showHidden) {
+        emptyLibraryCta.classList.remove('hidden');
+        emptyLibraryCta.querySelector('h2').textContent = 'Everything in your library is hidden from the feed';
+        emptyLibraryCta.querySelector('p').textContent =
+            'You’re still subscribed — open Settings to turn “Show in home feed” back on, or browse a specific podcast.';
+    } else {
+        emptyLibraryCta.classList.add('hidden');
+    }
 }
 
 function updatePodcastFocusUI() {
@@ -825,6 +924,7 @@ function openPodcastView(podcast) {
 }
 
 function clearPodcastView() {
+    // Leaves the homepage feed (all subscribed shows), not "every episode of this podcast".
     state.podcastId = '';
     state.page = 1;
     const podcastSelect = document.getElementById('filter-podcast');
@@ -836,9 +936,15 @@ function clearPodcastView() {
 function loadSubscriptions() {
     if (!window.MICAHPOD_USER) return;
     apiGet('api/subscriptions.php').then(data => {
-        subscriptionIds = new Set((data.subscriptions || []).map(row => String(row.id)));
+        const rows = data.subscriptions || [];
+        subscriptionIds = new Set(rows.map(row => String(row.id)));
+        subscriptionMeta = {};
+        rows.forEach(row => {
+            subscriptionMeta[String(row.id)] = row;
+        });
         subscriptionsLoaded = true;
         renderSubscriptionPanel();
+        loadCommunityPodcasts();
     });
 }
 
@@ -881,6 +987,7 @@ function loadEpisodes() {
     });
     if (state.podcastId) params.set('podcast_id', state.podcastId);
     if (state.rated !== '') params.set('rated', state.rated);
+    if (state.played !== '') params.set('played', state.played);
     if (state.recommended) params.set('recommended', '1');
     if (state.showAll) params.set('show_all', '1');
     if (state.tag) params.set('tag', state.tag);
@@ -888,16 +995,23 @@ function loadEpisodes() {
 
     apiGet(`api/episodes.php?${params.toString()}`).then(data => {
         const episodes = data.episodes || [];
-        const pageCount = Math.max(1, Math.ceil(data.total / data.per_page));
+        const pageCount = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || state.perPage)));
         currentEpisodeMap = {};
         episodes.forEach(ep => {
             currentEpisodeMap[ep.id] = ep;
         });
+        updateEmptyLibraryCta(data);
         const renderEpisodes = () => {
             episodeGrid.innerHTML = '';
             let visible = episodes;
             if (userSettings?.hide_played) {
                 visible = episodes.filter(ep => !ep.completed);
+            }
+            if (!visible.length && !data.library_empty && !data.feed_hidden_only) {
+                const empty = document.createElement('div');
+                empty.className = 'muted';
+                empty.textContent = 'No episodes match these filters.';
+                episodeGrid.appendChild(empty);
             }
             visible.forEach(ep => episodeGrid.appendChild(renderEpisode(ep)));
             pageInfo.textContent = `Page ${data.page} of ${pageCount}`;
@@ -968,6 +1082,11 @@ document.getElementById('filter-sort').addEventListener('change', e => {
 });
 document.getElementById('filter-rated').addEventListener('change', e => {
     state.rated = e.target.value;
+    state.page = 1;
+    loadEpisodes();
+});
+document.getElementById('filter-played').addEventListener('change', e => {
+    state.played = e.target.value;
     state.page = 1;
     loadEpisodes();
 });
@@ -1185,6 +1304,13 @@ if (podcastFocusClear) {
     podcastFocusClear.addEventListener('click', () => clearPodcastView());
 }
 
+document.getElementById('cta-open-podcasts')?.addEventListener('click', () => {
+    if (subscriptionPanel) subscriptionPanel.classList.remove('hidden');
+    document.getElementById('nav-my-podcasts')?.classList.add('active');
+    subscriptionPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+initEpisodeColumns();
 loadPodcasts();
 
 if (window.MICAHPOD_USER) {

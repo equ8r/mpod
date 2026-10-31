@@ -18,20 +18,21 @@
         android:alpha="0.5"
         android:visibility="gone" />
 
-    <!-- Player content -->
     <LinearLayout
         android:id="@+id/playerContent"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:padding="24dp">
+        android:paddingHorizontal="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
 
         <ImageView
             android:id="@+id/artworkImage"
-            android:layout_width="280dp"
-            android:layout_height="280dp"
-            android:layout_marginTop="24dp"
+            android:layout_width="180dp"
+            android:layout_height="180dp"
+            android:layout_marginTop="4dp"
             android:scaleType="centerCrop"
             android:contentDescription="Artwork" />
 
@@ -39,28 +40,69 @@
             android:id="@+id/episodeTitleText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:layout_marginTop="12dp"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textAlignment="center"
-            android:maxLines="3"
+            android:maxLines="2"
             android:ellipsize="end" />
 
         <TextView
             android:id="@+id/podcastTitleText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:layout_marginTop="2dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
             android:textAlignment="center"
             android:alpha="0.7"
             android:maxLines="1"
             android:ellipsize="end" />
 
+        <!-- Queue left, Cast right — always on-screen -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/queueButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="44dp"
+                android:text="@string/queue" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <androidx.mediarouter.app.MediaRouteButton
+                android:id="@+id/castButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:contentDescription="@string/cast"
+                app:mediaRouteButtonTint="?attr/colorOnSurface" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/castingStatusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorPrimary"
+            android:textAlignment="center"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
         <com.google.android.material.slider.Slider
             android:id="@+id/seekBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="12dp"
             android:valueFrom="0"
             android:valueTo="100"
             android:value="0"
@@ -95,36 +137,36 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginTop="16dp">
+            android:layout_marginTop="8dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/skipBackButton"
                 style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
                 app:icon="@drawable/ic_skip_back_15"
-                app:iconSize="32dp"
+                app:iconSize="28dp"
                 app:iconTint="?attr/colorOnSurface"
                 android:contentDescription="Skip back 30s" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/playPauseButton"
                 style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:layout_marginStart="24dp"
-                android:layout_marginEnd="24dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:layout_marginStart="20dp"
+                android:layout_marginEnd="20dp"
                 app:icon="@drawable/ic_play"
-                app:iconSize="40dp"
+                app:iconSize="36dp"
                 android:contentDescription="Play/Pause" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/skipForwardButton"
                 style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
                 app:icon="@drawable/ic_skip_forward_30"
-                app:iconSize="32dp"
+                app:iconSize="28dp"
                 app:iconTint="?attr/colorOnSurface"
                 android:contentDescription="Skip forward 30s" />
         </LinearLayout>
@@ -134,7 +176,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginTop="20dp">
+            android:layout_marginTop="12dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/saveProgressButton"
@@ -152,19 +194,11 @@
                 android:text="@string/mark_played" />
         </LinearLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/queueButton"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/queue" />
-
         <TextView
             android:id="@+id/saveStatusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:textAlignment="center"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:alpha="0.7" />

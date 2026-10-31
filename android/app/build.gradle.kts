@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "com.circpros.micahpod"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.circpros.micahpod"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 13
-        versionName = "1.1.11"
+        targetSdk = 35
+        versionCode = 23
+        versionName = "1.1.21"
     }
 
     buildFeatures {
@@ -41,6 +41,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    // AGP 8.5+ aligns uncompressed .so to 16 KB (Pixel / Android 15+ page size).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
 }
 
 dependencies {
@@ -66,7 +73,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-session:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("androidx.media3:media3-cast:1.2.1")
     implementation("androidx.media:media:1.7.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.guava:guava:32.1.3-android")

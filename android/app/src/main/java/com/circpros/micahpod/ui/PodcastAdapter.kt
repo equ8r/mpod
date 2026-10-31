@@ -17,7 +17,8 @@ class PodcastAdapter(
 
     data class PodcastItem(
         val podcast: Podcast,
-        val isSubscribed: Boolean
+        val isSubscribed: Boolean,
+        val sectionLabel: String? = null
     )
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PodcastViewHolder {
@@ -38,10 +39,18 @@ class PodcastAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(item: PodcastItem) {
-            binding.podcastTitle.text = item.podcast.title
-            binding.podcastCount.text = itemView.context.getString(
-                R.string.episodes
-            ) + ": " + item.podcast.episodeCount
+            binding.podcastTitle.text = if (item.sectionLabel.isNullOrBlank()) {
+                item.podcast.title
+            } else {
+                "${item.sectionLabel}\n${item.podcast.title}"
+            }
+            val listeners = item.podcast.subscriberCount
+            binding.podcastCount.text = if (listeners != null && listeners > 0) {
+                itemView.context.getString(R.string.episodes) + ": " + item.podcast.episodeCount +
+                    " · " + listeners + " listeners"
+            } else {
+                itemView.context.getString(R.string.episodes) + ": " + item.podcast.episodeCount
+            }
 
             binding.podcastArtwork.load(item.podcast.artworkUrl) {
                 crossfade(true)

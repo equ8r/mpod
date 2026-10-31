@@ -10,7 +10,7 @@ $csrf = csrf_token();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars($csrf) ?>">
     <title>Settings - MicahPod</title>
-    <link rel="stylesheet" href="css/style.css?v=20260825a">
+    <link rel="stylesheet" href="css/style.css?v=20261008c">
 </head>
 <body>
     <header class="topbar">
@@ -37,6 +37,33 @@ $csrf = csrf_token();
     </header>
 
     <main class="container settings-container">
+        <section class="settings-section">
+            <h2>My Podcast Library</h2>
+            <p class="muted">Add shows you want, hide high-volume ones from your home feed, or remove them from your library.</p>
+
+            <div class="library-add">
+                <h3>Find a podcast</h3>
+                <div class="library-search-row">
+                    <input type="search" id="library-search-input" placeholder="Search podcasts…" autocomplete="off">
+                    <button class="btn btn-primary" type="button" id="library-search-btn">Search</button>
+                </div>
+                <div id="library-search-results" class="library-search-results"></div>
+
+                <h3>Or paste an RSS feed URL</h3>
+                <div class="library-search-row">
+                    <input type="url" id="library-feed-url" placeholder="https://example.com/feed.xml">
+                    <button class="btn btn-secondary" type="button" id="library-add-feed-btn">Add feed</button>
+                </div>
+                <span id="library-add-status" class="muted"></span>
+            </div>
+
+            <div class="library-list-header">
+                <h3>Your subscriptions</h3>
+                <span id="library-count" class="muted"></span>
+            </div>
+            <div id="library-list" class="library-list"></div>
+        </section>
+
         <section class="settings-section">
             <h2>Playback & Feed</h2>
             <form id="settings-form" class="settings-form">
@@ -72,6 +99,6 @@ $csrf = csrf_token();
         </section>
     </main>
 
-    <script src="js/settings.js"></script>
+    <script src="js/settings.js?v=20261008a"></script>
 </body>
 </html>

@@ -8,8 +8,10 @@ require_once __DIR__ . '/config.php';
 // Allow cron access via secret key (GET)
 $key = $_GET['key'] ?? '';
 $digestKey = env('DIGEST_KEY');
+$viaCronKey = false;
 if ($key && $digestKey && hash_equals($digestKey, $key)) {
     // Authenticated via key — skip session/CSRF checks
+    $viaCronKey = true;
 } else {
     require_login();
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -19,5 +21,7 @@ if ($key && $digestKey && hash_equals($digestKey, $key)) {
 }
 
 $podcastId = isset($_GET['podcast_id']) ? (int)$_GET['podcast_id'] : null;
-$result = refresh_podcast_feeds($podcastId);
+// Cron keyed runs use follower + tier filters; manual/admin refreshes do not.
+$scheduled = $viaCronKey && !$podcastId;
+$result = refresh_podcast_feeds($podcastId, $scheduled);
 json_response($result);

@@ -90,5 +90,14 @@
     <fragment
         android:id="@+id/settingsFragment"
         android:name="com.circpros.micahpod.ui.SettingsFragment"
-        android:label="@string/settings" />
+        android:label="@string/settings">
+        <action
+            android:id="@+id/action_settings_to_admin"
+            app:destination="@id/adminFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/adminFragment"
+        android:name="com.circpros.micahpod.ui.AdminFragment"
+        android:label="@string/admin" />
 </navigation>

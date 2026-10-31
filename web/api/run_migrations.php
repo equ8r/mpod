@@ -44,6 +44,18 @@ $statements = [
         blacklisted_by INT NULL,
         UNIQUE KEY uq_tag_blacklist (tag_name, tag_type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    "ALTER TABLE podcasts ADD COLUMN curated TINYINT(1) NOT NULL DEFAULT 1",
+    "ALTER TABLE user_subscriptions ADD COLUMN include_in_feed TINYINT(1) NOT NULL DEFAULT 1",
+    "CREATE TABLE IF NOT EXISTS podcast_introductions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        podcast_id INT NOT NULL,
+        user_id INT NOT NULL,
+        source VARCHAR(32) NOT NULL DEFAULT 'user',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_podcast_intro_user (podcast_id, user_id),
+        KEY idx_podcast_intro_podcast (podcast_id),
+        KEY idx_podcast_intro_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];
 
 foreach ($statements as $sql) {

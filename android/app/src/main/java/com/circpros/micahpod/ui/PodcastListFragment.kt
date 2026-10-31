@@ -68,7 +68,7 @@ class PodcastListFragment : Fragment() {
             repository.isCacheFresh(MicahPodRepository.KEY_SUBSCRIPTIONS)
 
         if (!cachedPodcasts.isNullOrEmpty()) {
-            showPodcasts(cachedPodcasts, cachedSubs)
+            showPodcasts(cachedPodcasts, emptyList(), cachedSubs)
             binding.podcastProgress.isVisible = false
             binding.podcastError.isVisible = false
             if (!forceRefresh && fresh) {
@@ -90,6 +90,9 @@ class PodcastListFragment : Fragment() {
             val subscriptionsResult = withContext(Dispatchers.IO) {
                 repository.getSubscriptions(forceRefresh = true)
             }
+            val communityResult = withContext(Dispatchers.IO) {
+                repository.getCommunityPodcasts()
+            }
             if (_binding == null || generation != loadGeneration) return@launch
 
             when (podcastsResult) {
@@ -99,7 +102,12 @@ class PodcastListFragment : Fragment() {
                     } else {
                         cachedSubs
                     }
-                    showPodcasts(podcastsResult.data, subscribedIds)
+                    val community = if (communityResult is RepositoryResult.Success) {
+                        communityResult.data
+                    } else {
+                        emptyList()
+                    }
+                    showPodcasts(podcastsResult.data, community, subscribedIds)
                     binding.podcastError.isVisible = false
                 }
                 is RepositoryResult.Error -> {
@@ -116,14 +124,28 @@ class PodcastListFragment : Fragment() {
         }
     }
 
-    private fun showPodcasts(podcasts: List<Podcast>, subscribedIds: Set<Int>) {
-        val items = podcasts.map { podcast ->
+    private fun showPodcasts(
+        podcasts: List<Podcast>,
+        community: List<Podcast> = emptyList(),
+        subscribedIds: Set<Int>
+    ) {
+        val featured = podcasts.map { podcast ->
             PodcastAdapter.PodcastItem(
                 podcast = podcast,
-                isSubscribed = subscribedIds.contains(podcast.id)
+                isSubscribed = subscribedIds.contains(podcast.id),
+                sectionLabel = null
             )
         }
-        adapter.submitList(items)
+        val others = community
+            .filter { c -> featured.none { it.podcast.id == c.id } }
+            .mapIndexed { index, podcast ->
+                PodcastAdapter.PodcastItem(
+                    podcast = podcast,
+                    isSubscribed = subscribedIds.contains(podcast.id),
+                    sectionLabel = if (index == 0) getString(R.string.other_people_like) else null
+                )
+            }
+        adapter.submitList(featured + others)
         binding.podcastRecycler.isVisible = true
     }
 

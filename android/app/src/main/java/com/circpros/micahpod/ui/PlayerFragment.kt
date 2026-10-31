@@ -14,6 +14,7 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -25,9 +26,12 @@ import coil.transform.RoundedCornersTransformation
 import com.circpros.micahpod.R
 import com.circpros.micahpod.data.ServiceLocator
 import com.circpros.micahpod.databinding.FragmentPlayerBinding
+import com.circpros.micahpod.playback.LocalPlaybackBookmark
 import com.circpros.micahpod.playback.MicahPodMediaService
 import com.circpros.micahpod.playback.PlaybackHelper
 import com.circpros.micahpod.repository.RepositoryResult
+import com.google.android.gms.cast.framework.CastButtonFactory
+import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,6 +110,7 @@ class PlayerFragment : Fragment() {
             findNavController().navigate(R.id.queueFragment)
         }
         updateQueueButtonLabel()
+        setupCastButton()
 
         binding.seekBar.setLabelFormatter { value -> formatTime(value.toLong()) }
         binding.seekBar.addOnChangeListener { _, value, fromUser ->
@@ -191,10 +196,14 @@ class PlayerFragment : Fragment() {
                             refreshMetadata()
                             setPlayerVisible(mediaController.mediaItemCount > 0)
                         }
+                        override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                            updateCastingStatus(deviceInfo)
+                        }
                     })
                     updatePlayPauseIcon()
                     updateProgress()
                     refreshMetadata()
+                    updateCastingStatus(mediaController.deviceInfo)
 
                     val hasMedia = mediaController.mediaItemCount > 0
                     val hasInitialInfo = !initialEpisodeTitle.isNullOrBlank() || !initialArtworkUrl.isNullOrBlank()
@@ -267,6 +276,43 @@ class PlayerFragment : Fragment() {
         }
     }
 
+    private fun setupCastButton() {
+        try {
+            CastContext.getSharedInstance(requireContext())
+            CastButtonFactory.setUpMediaRouteButton(requireContext(), binding.castButton)
+            binding.castButton.isVisible = true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Cast button unavailable", t)
+            binding.castButton.isVisible = false
+            binding.castingStatusText.isVisible = false
+        }
+    }
+
+    private fun updateCastingStatus(deviceInfo: DeviceInfo) {
+        if (_binding == null) return
+        val remote = deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
+        if (remote) {
+            val name = try {
+                CastContext.getSharedInstance(requireContext())
+                    .sessionManager
+                    .currentCastSession
+                    ?.castDevice
+                    ?.friendlyName
+            } catch (_: Exception) {
+                null
+            }
+            binding.castingStatusText.text = if (!name.isNullOrBlank()) {
+                getString(R.string.casting_to, name)
+            } else {
+                getString(R.string.casting_to, getString(R.string.cast))
+            }
+            binding.castingStatusText.isVisible = true
+        } else {
+            binding.castingStatusText.text = ""
+            binding.castingStatusText.isVisible = false
+        }
+    }
+
     private fun saveProgressManual() {
         val c = controller ?: return
         val mediaId = c.currentMediaItem?.mediaId ?: return
@@ -328,15 +374,82 @@ class PlayerFragment : Fragment() {
             binding.markPlayedButton.isEnabled = true
             when (result) {
                 is RepositoryResult.Success -> {
+                    LocalPlaybackBookmark.clearEpisode(requireContext(), episodeId)
                     Toast.makeText(requireContext(), R.string.marked_played, Toast.LENGTH_SHORT).show()
                     binding.saveStatusText.text = getString(R.string.marked_played)
-                    c.pause()
+                    advanceAfterMarkedPlayed(c)
                 }
                 is RepositoryResult.Error -> {
                     Toast.makeText(requireContext(), result.message, Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
+
+    private fun advanceAfterMarkedPlayed(c: MediaController) {
+        val next = ServiceLocator.queueManager.popNext()
+        if (next != null) {
+            viewLifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    val qm = ServiceLocator.queueManager
+                    ServiceLocator.repository.saveQueue(
+                        queueJson = qm.toJsonArray(),
+                        queueUpdatedAt = qm.clientUpdatedAt(),
+                        clearQueue = qm.size() == 0
+                    )
+                }
+            }
+            viewLifecycleOwner.lifecycleScope.launch {
+                var episode = next.toEpisode()
+                if (episode.audioUrl.isNullOrBlank() && episode.id > 0) {
+                    val fetched = withContext(Dispatchers.IO) {
+                        ServiceLocator.repository.getEpisodeById(episode.id)
+                    }
+                    if (fetched is RepositoryResult.Success) {
+                        episode = fetched.data
+                    }
+                }
+                if (_binding == null) return@launch
+                playQueuedEpisode(episode)
+            }
+            return
+        }
+
+        try {
+            c.pause()
+            if (c.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) {
+                c.clearMediaItems()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear player after mark played", e)
+        }
+        setPlayerVisible(false)
+    }
+
+    private fun playQueuedEpisode(episode: com.circpros.micahpod.data.Episode) {
+        if (episode.audioUrl.isNullOrBlank()) {
+            Toast.makeText(requireContext(), R.string.queue_play_failed, Toast.LENGTH_SHORT).show()
+            setPlayerVisible(false)
+            return
+        }
+        val playable = episode.copy(id = episode.resolvedId())
+        ServiceLocator.episodeCache[playable.id] = playable
+        Toast.makeText(requireContext(), R.string.playing_next_queued, Toast.LENGTH_SHORT).show()
+        PlaybackHelper.playEpisode(
+            context = requireContext(),
+            episode = playable,
+            startPositionSeconds = 0.0,
+            autoPlay = true
+        )
+        binding.episodeTitleText.text = playable.title
+        binding.podcastTitleText.text = playable.podcastTitle.orEmpty()
+        (playable.artworkUrl ?: playable.podcastArtwork)?.let { url ->
+            binding.artworkImage.load(url) {
+                crossfade(true)
+                transformations(RoundedCornersTransformation(24f))
+            }
+        }
+        setPlayerVisible(true)
     }
 
     private fun refreshMetadata() {
@@ -392,14 +505,22 @@ class PlayerFragment : Fragment() {
             }
             if (duration <= 0 || duration == C.TIME_UNSET) return
             val seekBar = binding.seekBar
-            val clampedPosition = position.coerceIn(0, duration)
-            if (seekBar.valueTo != duration.toFloat()) {
-                seekBar.valueTo = duration.toFloat().coerceAtLeast(1f)
+            val newTo = duration.toFloat().coerceAtLeast(1f)
+            val newVal = position.coerceIn(0, duration).toFloat()
+            // Material Slider throws if value is outside [valueFrom, valueTo] while
+            // shrinking valueTo (common when switching episodes / clearing media).
+            val from = seekBar.valueFrom
+            if (newTo >= seekBar.valueTo) {
+                seekBar.valueTo = newTo
+                seekBar.value = newVal.coerceIn(from, seekBar.valueTo)
+            } else {
+                seekBar.value = newVal.coerceIn(from, minOf(seekBar.valueTo, newTo))
+                seekBar.valueTo = newTo
+                seekBar.value = newVal.coerceIn(from, seekBar.valueTo)
             }
-            seekBar.value = clampedPosition.toFloat().coerceIn(seekBar.valueFrom, seekBar.valueTo)
             binding.totalTime.text = formatTime(duration)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to update progress", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to update progress", t)
         }
     }
 

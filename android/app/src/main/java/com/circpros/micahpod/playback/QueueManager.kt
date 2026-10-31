@@ -72,6 +72,12 @@ class QueueManager(private val gson: Gson) {
         return removed
     }
 
+    fun removeEpisode(item: QueueEpisode): QueueEpisode? {
+        val idx = items.indexOfFirst { it.key() == item.key() }
+        if (idx < 0) return null
+        return removeAt(idx)
+    }
+
     fun clear() {
         items.clear()
         bumpUpdatedAt()

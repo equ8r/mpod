@@ -48,6 +48,10 @@ class EpisodeAdapter(
                 crossfade(true)
             }
 
+            val played = episode.completed == true
+            binding.episodePlayedBanner.isVisible = played
+            binding.root.alpha = if (played) 0.92f else 1f
+
             binding.root.setOnClickListener {
                 onEpisodeClick(episode)
             }

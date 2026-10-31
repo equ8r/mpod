@@ -1,6 +1,7 @@
 package com.circpros.micahpod.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,10 +10,13 @@ import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.circpros.micahpod.R
+import com.circpros.micahpod.data.Episode
 import com.circpros.micahpod.data.PlayerStateResponse
+import com.circpros.micahpod.data.QueueEpisode
 import com.circpros.micahpod.data.ServiceLocator
 import com.circpros.micahpod.databinding.FragmentQueueBinding
 import com.circpros.micahpod.playback.PlaybackHelper
@@ -30,7 +34,7 @@ class QueueFragment : Fragment() {
     private val gson = Gson()
 
     private val adapter = QueueAdapter(
-        onPlay = { item, index -> playNow(item, index) },
+        onPlay = { item, _ -> playNow(item) },
         onRemove = { index -> removeAt(index) }
     )
 
@@ -113,30 +117,61 @@ class QueueFragment : Fragment() {
         Toast.makeText(requireContext(), R.string.queue_cleared, Toast.LENGTH_SHORT).show()
     }
 
-    private fun playNow(item: com.circpros.micahpod.data.QueueEpisode, index: Int) {
-        queueManager.removeAt(index)
-        persistQueue()
-        val episode = item.toEpisode()
-        if (episode.id > 0) {
-            ServiceLocator.episodeCache[episode.id] = episode
+    private fun playNow(item: QueueEpisode) {
+        lifecycleScope.launch {
+            try {
+                var episode = item.toEpisode()
+                if (episode.audioUrl.isNullOrBlank() && episode.id > 0) {
+                    val fetched = withContext(Dispatchers.IO) {
+                        repository.getEpisodeById(episode.id)
+                    }
+                    if (fetched is RepositoryResult.Success) {
+                        episode = fetched.data
+                    }
+                }
+                if (episode.audioUrl.isNullOrBlank()) {
+                    Toast.makeText(requireContext(), "No audio URL", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                queueManager.removeEpisode(item)
+                persistQueue()
+
+                val playable: Episode = episode.copy(id = episode.resolvedId())
+                ServiceLocator.episodeCache[playable.id] = playable
+                PlaybackHelper.playEpisode(
+                    context = requireContext(),
+                    episode = playable,
+                    startPositionSeconds = 0.0,
+                    autoPlay = true
+                )
+
+                val args = bundleOf(
+                    "episodeId" to playable.id,
+                    "episodeTitle" to playable.title,
+                    "episodeUrl" to (playable.audioUrl ?: ""),
+                    "artworkUrl" to (playable.artworkUrl ?: playable.podcastArtwork ?: "")
+                )
+                val nav = findNavController()
+                val popped = nav.popBackStack(R.id.playerFragment, false)
+                if (!popped) {
+                    nav.navigate(
+                        R.id.playerFragment,
+                        args,
+                        NavOptions.Builder()
+                            .setLaunchSingleTop(true)
+                            .setPopUpTo(R.id.queueFragment, true)
+                            .build()
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "playNow failed", t)
+                Toast.makeText(requireContext(), R.string.queue_play_failed, Toast.LENGTH_LONG).show()
+            }
         }
-        if (episode.audioUrl.isNullOrBlank()) {
-            Toast.makeText(requireContext(), "No audio URL", Toast.LENGTH_SHORT).show()
-            return
-        }
-        PlaybackHelper.playEpisode(
-            context = requireContext(),
-            episode = episode,
-            startPositionSeconds = 0.0,
-            autoPlay = true
-        )
-        val args = bundleOf(
-            "episodeId" to episode.id,
-            "episodeTitle" to episode.title,
-            "episodeUrl" to (episode.audioUrl ?: ""),
-            "artworkUrl" to (episode.artworkUrl ?: episode.podcastArtwork ?: ""),
-            "positionSeconds" to 0.0
-        )
-        findNavController().navigate(R.id.playerFragment, args)
+    }
+
+    companion object {
+        private const val TAG = "QueueFragment"
     }
 }

@@ -11,8 +11,12 @@ import com.circpros.micahpod.data.Episode
 import com.circpros.micahpod.databinding.ItemFeedEpisodeBinding
 
 class FeedAdapter(
-    private val onEpisodeClick: (Episode) -> Unit
+    private val onEpisodeClick: (Episode) -> Unit,
+    private val onMarkComplete: ((Episode) -> Unit)? = null
 ) : ListAdapter<Episode, FeedAdapter.FeedViewHolder>(FeedDiff) {
+
+    /** When true, Continue rows can reveal "Mark complete". Applied on next bind/submitList. */
+    var continueMode: Boolean = false
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FeedViewHolder {
         val binding = ItemFeedEpisodeBinding.inflate(
@@ -25,15 +29,23 @@ class FeedAdapter(
         holder.bind(getItem(position))
     }
 
+    fun episodeAt(position: Int): Episode? =
+        if (position in 0 until itemCount) getItem(position) else null
+
+    fun resetReveal(holder: RecyclerView.ViewHolder) {
+        if (holder is FeedViewHolder) holder.resetReveal()
+    }
+
     inner class FeedViewHolder(
         private val binding: ItemFeedEpisodeBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(episode: Episode) {
+            resetReveal()
+            binding.feedMarkCompleteAction.isVisible = continueMode && onMarkComplete != null
             binding.feedEpisodeTitle.text = episode.title
             binding.feedPodcastTitle.text = episode.podcastTitle ?: ""
 
-            // Relative time / progress
             val date = episode.pubDate?.let { relativeTime(it) } ?: ""
             val dur = episode.durationSeconds?.let {
                 val h = it / 3600
@@ -48,18 +60,38 @@ class FeedAdapter(
             val art = episode.artworkUrl ?: episode.podcastArtwork
             binding.feedArtwork.load(art) { crossfade(true) }
 
-            // Comment count
             val comments = episode.commentCount ?: 0
             binding.feedCommentCount.isVisible = comments > 0
             if (comments > 0) {
                 binding.feedCommentCount.text = "💬 $comments"
             }
 
-            // Played badge
-            binding.feedPlayedBadge.isVisible = episode.completed == true
+            val played = episode.completed == true
+            binding.feedPlayedBanner.isVisible = played
+            binding.feedPlayedBadge.isVisible = false
+            binding.feedForegroundCard.alpha = if (played) 0.92f else 1f
 
-            binding.root.setOnClickListener { onEpisodeClick(episode) }
+            binding.feedForegroundCard.setOnClickListener { onEpisodeClick(episode) }
+            binding.feedMarkCompleteAction.setOnClickListener {
+                onMarkComplete?.invoke(episode)
+                resetReveal()
+            }
         }
+
+        fun resetReveal() {
+            binding.feedForegroundCard.translationX = 0f
+        }
+
+        fun foreground() = binding.feedForegroundCard
+
+        fun revealWidth(): Float =
+            if (binding.feedMarkCompleteAction.isVisible) {
+                binding.feedMarkCompleteAction.width.toFloat().coerceAtLeast(
+                    binding.feedMarkCompleteAction.resources.displayMetrics.density * 120f
+                )
+            } else {
+                0f
+            }
     }
 
     private fun relativeTime(dateString: String): String {

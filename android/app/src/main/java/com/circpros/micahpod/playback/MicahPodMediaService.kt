@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -25,6 +27,7 @@ import com.circpros.micahpod.data.Podcast
 import com.circpros.micahpod.data.ServiceLocator
 import com.circpros.micahpod.repository.RepositoryResult
 import com.circpros.micahpod.ui.MainActivity
+import com.google.android.gms.cast.framework.CastContext
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -39,12 +42,15 @@ import kotlin.math.abs
 class MicahPodMediaService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var exoPlayer: ExoPlayer
+    private var castPlayer: CastPlayer? = null
+    private var activeUnderlyingPlayer: Player? = null
     /** Session-facing player: cover/lock-screen prev/next become ±30s (podcast-style). */
     private lateinit var player: Player
     private lateinit var session: MediaLibraryService.MediaLibrarySession
     private val repository by lazy { ServiceLocator.repository }
     private val authManager by lazy { ServiceLocator.authManager }
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val playerEventListener = PlayerEventListener()
 
     private val podcastCache = mutableMapOf<Int, Podcast>()
     private var currentEpisodeId: String? = null
@@ -140,8 +146,12 @@ class MicahPodMediaService : MediaLibraryService() {
             .setSeekBackIncrementMs(SKIP_MS)
             .setSeekForwardIncrementMs(SKIP_MS)
             .build()
-        exoPlayer.addListener(PlayerEventListener())
+        exoPlayer.addListener(playerEventListener)
         exoPlayer.playWhenReady = false
+
+        setupCastPlayer()
+
+        activeUnderlyingPlayer = exoPlayer
         player = PodcastSkipPlayer(exoPlayer)
 
         val sessionActivity = PendingIntent.getActivity(
@@ -167,6 +177,68 @@ class MicahPodMediaService : MediaLibraryService() {
 
         updateSessionButtons()
         mainHandler.postDelayed(heartbeat, HEARTBEAT_MS)
+    }
+
+    private fun setupCastPlayer() {
+        try {
+            val castContext = CastContext.getSharedInstance(this)
+            val remote = CastPlayer(castContext)
+            remote.setSessionAvailabilityListener(object : SessionAvailabilityListener {
+                override fun onCastSessionAvailable() {
+                    mainHandler.post { setActiveUnderlyingPlayer(remote) }
+                }
+
+                override fun onCastSessionUnavailable() {
+                    mainHandler.post { setActiveUnderlyingPlayer(exoPlayer) }
+                }
+            })
+            remote.addListener(playerEventListener)
+            castPlayer = remote
+            Log.d(TAG, "CastPlayer ready")
+        } catch (t: Throwable) {
+            Log.w(TAG, "Cast unavailable on this device", t)
+            castPlayer = null
+        }
+    }
+
+    /**
+     * Moves the current queue + playhead between ExoPlayer and CastPlayer when a Cast
+     * session starts or ends, then points MediaSession at the active player.
+     */
+    private fun setActiveUnderlyingPlayer(newPlayer: Player) {
+        if (!::session.isInitialized) return
+        val previous = activeUnderlyingPlayer
+        if (previous === newPlayer) return
+
+        Log.d(TAG, "Switching player to ${newPlayer.javaClass.simpleName}")
+
+        var mediaItems = emptyList<MediaItem>()
+        var startIndex = 0
+        var startPositionMs = 0L
+        var playWhenReady = false
+        if (previous != null) {
+            val count = previous.mediaItemCount
+            if (count > 0) {
+                mediaItems = (0 until count).map { previous.getMediaItemAt(it) }
+                startIndex = previous.currentMediaItemIndex.coerceIn(0, count - 1)
+                startPositionMs = previous.currentPosition.coerceAtLeast(0)
+                playWhenReady = previous.playWhenReady
+            }
+            previous.playWhenReady = false
+            previous.stop()
+            previous.clearMediaItems()
+        }
+
+        activeUnderlyingPlayer = newPlayer
+        player = PodcastSkipPlayer(newPlayer)
+        session.setPlayer(player)
+
+        if (mediaItems.isNotEmpty()) {
+            newPlayer.setMediaItems(mediaItems, startIndex, startPositionMs)
+            newPlayer.prepare()
+            newPlayer.playWhenReady = playWhenReady
+        }
+        updateSessionButtons()
     }
 
     @androidx.media3.common.util.UnstableApi
@@ -213,7 +285,12 @@ class MicahPodMediaService : MediaLibraryService() {
         if (::session.isInitialized) {
             session.release()
         }
+        castPlayer?.setSessionAvailabilityListener(null)
+        castPlayer?.removeListener(playerEventListener)
+        castPlayer?.release()
+        castPlayer = null
         if (::exoPlayer.isInitialized) {
+            exoPlayer.removeListener(playerEventListener)
             exoPlayer.release()
         }
         serviceScope.cancel()
@@ -366,8 +443,8 @@ class MicahPodMediaService : MediaLibraryService() {
     private suspend fun buildEpisodeItemsAsync(podcastId: Int): ImmutableList<MediaItem> {
         return when (val result = repository.getEpisodes(podcastId)) {
             is RepositoryResult.Success -> {
-                result.data.forEach { ServiceLocator.episodeCache[it.id] = it }
-                ImmutableList.copyOf(result.data.map { buildEpisodeItem(it) })
+                result.data.episodes.forEach { ServiceLocator.episodeCache[it.id] = it }
+                ImmutableList.copyOf(result.data.episodes.map { buildEpisodeItem(it) })
             }
             is RepositoryResult.Error -> ImmutableList.of()
         }
@@ -680,6 +757,14 @@ class MicahPodMediaService : MediaLibraryService() {
         sendProgressIfNeeded(force = true, source = "auto", replaceSession = true)
         // Genuine end — clear local bookmark so a later reload doesn't jump back into the credits.
         lastMeaningfulPositionMs = 0L
+        val finishedId = currentEpisodeId?.toIntOrNull()
+        if (finishedId != null && finishedId > 0) {
+            LocalPlaybackBookmark.clearEpisode(this, finishedId)
+            serviceScope.launch {
+                // Mark complete so it drops off Continue; then advance the queue.
+                repository.markPlayed(finishedId)
+            }
+        }
         mainHandler.post { advanceQueueAfterEnded() }
     }
 
@@ -797,12 +882,21 @@ class MicahPodMediaService : MediaLibraryService() {
             advanceQueueAfterEnded()
             return
         }
-        PlaybackHelper.playEpisode(
-            context = this,
-            episode = episode,
-            startPositionSeconds = 0.0,
-            autoPlay = true
-        )
+        // Drive the service player directly — more reliable than opening a second controller.
+        try {
+            val mediaItem = buildEpisodeItem(episode)
+            player.setMediaItem(mediaItem, /* startPositionMs= */ 0L)
+            player.prepare()
+            player.play()
+        } catch (t: Throwable) {
+            Log.e(TAG, "playQueueEpisode failed; falling back to PlaybackHelper", t)
+            PlaybackHelper.playEpisode(
+                context = this,
+                episode = episode,
+                startPositionSeconds = 0.0,
+                autoPlay = true
+            )
+        }
     }
 
     private fun sendProgressIfNeeded(

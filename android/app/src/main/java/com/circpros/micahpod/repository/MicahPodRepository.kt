@@ -1,9 +1,13 @@
 package com.circpros.micahpod.repository
 
 import android.content.Context
+import com.circpros.micahpod.data.AddPodcastResponse
 import com.circpros.micahpod.data.Episode
+import com.circpros.micahpod.data.EpisodesPage
 import com.circpros.micahpod.data.EpisodesResponse
+import com.circpros.micahpod.data.FeedPage
 import com.circpros.micahpod.data.InProgressResponse
+import com.circpros.micahpod.data.ItunesPodcastResult
 import com.circpros.micahpod.data.Podcast
 import com.circpros.micahpod.data.PodcastsResponse
 import com.circpros.micahpod.data.Subscription
@@ -17,6 +21,7 @@ import okhttp3.ResponseBody
 class MicahPodRepository(
     context: Context,
     private val apiService: ApiService,
+    private val longApiService: ApiService,
     private val authManager: AuthManager,
     private val gson: Gson
 ) {
@@ -35,15 +40,17 @@ class MicahPodRepository(
             sort: String = "newest",
             query: String? = null,
             recommended: Boolean = false,
-            continueOnly: Boolean = false
+            continueOnly: Boolean = false,
+            played: String? = null
         ): String {
             if (continueOnly) return KEY_CONTINUE
-            if (!query.isNullOrBlank()) return "feed:q:${query.trim().lowercase()}"
-            if (recommended) return "feed:recommended"
-            return "feed:$sort"
+            if (!query.isNullOrBlank()) return "feed:q:${query.trim().lowercase()}:played:${played ?: "all"}"
+            if (recommended) return "feed:recommended:played:${played ?: "all"}"
+            return "feed:$sort:played:${played ?: "all"}"
         }
 
-        fun episodesCacheKey(podcastId: Int) = "episodes_$podcastId"
+        fun episodesCacheKey(podcastId: Int, sort: String = "newest") =
+            "episodes_${podcastId}_$sort"
     }
 
     fun peekEpisodes(cacheKey: String): List<Episode>? {
@@ -91,6 +98,7 @@ class MicahPodRepository(
         val body = response.body()
         if (body?.ok == true) {
             authManager.saveCredentials(username, password)
+            body.user?.role?.let { authManager.setUserRole(it) }
             // Pull a fresh CSRF for any non-beacon POSTs after login.
             authManager.setCsrfToken(null)
             ensureCsrfToken()
@@ -108,6 +116,7 @@ class MicahPodRepository(
         }
         val ping = apiService.getPlayerState()
         if (ping.isSuccessful) {
+            refreshUserRole()
             return RepositoryResult.Success(Unit)
         }
         if (ping.code() == 401 || ping.code() == 403) {
@@ -116,6 +125,19 @@ class MicahPodRepository(
         }
         // Network blip — keep existing session.
         return RepositoryResult.Success(Unit)
+    }
+
+    suspend fun refreshUserRole(): RepositoryResult<String> {
+        val response = withAuthRetry { apiService.getMe() }
+        if (!response.isSuccessful) {
+            return RepositoryResult.Error("Unable to load profile (${response.code()})")
+        }
+        val role = response.body()?.user?.role
+        if (!role.isNullOrBlank()) {
+            authManager.setUserRole(role)
+            return RepositoryResult.Success(role)
+        }
+        return RepositoryResult.Error("No user profile")
     }
 
     private suspend fun reLoginWithStoredCredentials(): RepositoryResult<Unit> {
@@ -171,6 +193,7 @@ class MicahPodRepository(
     }
 
     suspend fun updateSubscription(podcastId: Int, subscribe: Boolean): RepositoryResult<Unit> {
+        ensureCsrfToken()
         val response = apiService.updateSubscription(
             mapOf(
                 "podcast_id" to podcastId.toString(),
@@ -179,10 +202,61 @@ class MicahPodRepository(
         )
         return if (response.isSuccessful) {
             listCache.invalidate(KEY_SUBSCRIPTIONS)
+            listCache.invalidate(KEY_FEED_DEFAULT)
             RepositoryResult.Success(Unit)
         } else {
             RepositoryResult.Error("Unable to update subscription")
         }
+    }
+
+    suspend fun setIncludeInFeed(podcastId: Int, includeInFeed: Boolean): RepositoryResult<Unit> {
+        ensureCsrfToken()
+        val response = apiService.updateSubscription(
+            mapOf(
+                "podcast_id" to podcastId.toString(),
+                "action" to "set_include_in_feed",
+                "include_in_feed" to if (includeInFeed) "1" else "0"
+            )
+        )
+        return if (response.isSuccessful) {
+            listCache.invalidate(KEY_SUBSCRIPTIONS)
+            listCache.invalidate(KEY_FEED_DEFAULT)
+            RepositoryResult.Success(Unit)
+        } else {
+            RepositoryResult.Error("Unable to update feed visibility")
+        }
+    }
+
+    suspend fun getCommunityPodcasts(): RepositoryResult<List<Podcast>> {
+        val response = apiService.getCommunityPodcasts()
+        if (response.isSuccessful) {
+            return RepositoryResult.Success(response.body()?.podcasts.orEmpty())
+        }
+        return RepositoryResult.Error("Unable to load community podcasts")
+    }
+
+    suspend fun searchPodcasts(query: String): RepositoryResult<List<ItunesPodcastResult>> {
+        val response = apiService.searchPodcasts(query)
+        if (response.isSuccessful) {
+            return RepositoryResult.Success(response.body()?.results.orEmpty())
+        }
+        return RepositoryResult.Error("Search failed")
+    }
+
+    suspend fun addUserPodcast(payload: Map<String, String>): RepositoryResult<AddPodcastResponse> {
+        ensureCsrfToken()
+        val response = apiService.addUserPodcast(body = payload)
+        if (response.isSuccessful) {
+            listCache.invalidate(KEY_SUBSCRIPTIONS)
+            listCache.invalidate(KEY_PODCASTS)
+            listCache.invalidate(KEY_FEED_DEFAULT)
+            val body = response.body()
+            if (body != null) return RepositoryResult.Success(body)
+        }
+        val err = runCatching {
+            gson.fromJson(response.errorBody()?.string().orEmpty(), AddPodcastResponse::class.java).error
+        }.getOrNull()
+        return RepositoryResult.Error(err ?: "Unable to add podcast")
     }
 
     suspend fun getFeed(forceRefresh: Boolean = false): RepositoryResult<List<Episode>> {
@@ -204,21 +278,63 @@ class MicahPodRepository(
             ?: RepositoryResult.Error("Unable to load feed")
     }
 
-    suspend fun getEpisodes(podcastId: Int, forceRefresh: Boolean = false): RepositoryResult<List<Episode>> {
-        val key = episodesCacheKey(podcastId)
-        if (!forceRefresh && listCache.isFresh(key)) {
-            peekEpisodes(key)?.let { return RepositoryResult.Success(it) }
+    suspend fun getEpisodes(
+        podcastId: Int,
+        page: Int = 1,
+        perPage: Int = 50,
+        sort: String = "newest",
+        forceRefresh: Boolean = false
+    ): RepositoryResult<EpisodesPage> {
+        val normalizedSort = if (sort == "oldest") "oldest" else "newest"
+        val key = episodesCacheKey(podcastId, normalizedSort)
+        // Cache only covers page 1 for fast reopen; later pages always hit the network.
+        if (page == 1 && !forceRefresh && listCache.isFresh(key)) {
+            listCache.get<EpisodesResponse>(key)?.first?.let { cached ->
+                return RepositoryResult.Success(
+                    EpisodesPage(
+                        episodes = cached.episodes,
+                        page = cached.page ?: 1,
+                        perPage = cached.perPage ?: perPage,
+                        total = cached.total ?: cached.episodes.size
+                    )
+                )
+            }
         }
-        val response = apiService.getEpisodes(podcastId.toString())
+        val response = apiService.getEpisodes(
+            podcastId = podcastId.toString(),
+            page = page,
+            perPage = perPage,
+            sort = normalizedSort
+        )
         if (response.isSuccessful) {
             val body = response.body()
             if (body != null) {
-                listCache.put(key, gson.toJson(body))
-                return RepositoryResult.Success(body.episodes)
+                if (page == 1) {
+                    listCache.put(key, gson.toJson(body))
+                }
+                return RepositoryResult.Success(
+                    EpisodesPage(
+                        episodes = body.episodes,
+                        page = body.page ?: page,
+                        perPage = body.perPage ?: perPage,
+                        total = body.total ?: body.episodes.size
+                    )
+                )
             }
         }
-        return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load episodes")
+        if (page == 1) {
+            listCache.get<EpisodesResponse>(key)?.first?.let { cached ->
+                return RepositoryResult.Success(
+                    EpisodesPage(
+                        episodes = cached.episodes,
+                        page = cached.page ?: 1,
+                        perPage = cached.perPage ?: perPage,
+                        total = cached.total ?: cached.episodes.size
+                    )
+                )
+            }
+        }
+        return RepositoryResult.Error("Unable to load episodes")
     }
 
     suspend fun fetchPlayerState(): RepositoryResult<String> {
@@ -286,7 +402,11 @@ class MicahPodRepository(
             val body = response.body()?.string().orEmpty()
             RepositoryResult.Success(body.ifBlank { "ok" })
         } else {
-            RepositoryResult.Error("Unable to submit log (${response.code()})")
+            val err = runCatching { response.errorBody()?.string().orEmpty() }.getOrNull().orEmpty()
+            RepositoryResult.Error(
+                "Unable to submit log (${response.code()})" +
+                    if (err.isNotBlank()) ": ${err.take(180)}" else ""
+            )
         }
     }
 
@@ -359,7 +479,15 @@ class MicahPodRepository(
             val parsed = runCatching {
                 gson.fromJson(json, InProgressResponse::class.java)
             }.getOrNull()
-            val episodes = parsed?.episodes.orEmpty().map { ep ->
+            if (parsed == null) {
+                android.util.Log.e(
+                    "MicahPodRepository",
+                    "Failed to parse in_progress response (len=${json.length}): ${json.take(240)}"
+                )
+                return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
+                    ?: RepositoryResult.Error("Unable to parse continue listening")
+            }
+            val episodes = parsed.episodes.orEmpty().map { ep ->
                 ep.copy(id = ep.resolvedId())
             }
             listCache.put(key, gson.toJson(InProgressResponse(episodes)))
@@ -414,11 +542,25 @@ class MicahPodRepository(
         tag: String? = null,
         query: String? = null,
         recommended: Boolean = false,
+        played: String? = null,
         forceRefresh: Boolean = false
-    ): RepositoryResult<List<Episode>> {
-        val key = feedCacheKey(sort = sort, query = query, recommended = recommended)
+    ): RepositoryResult<FeedPage> {
+        val key = feedCacheKey(
+            sort = sort,
+            query = query,
+            recommended = recommended,
+            played = played
+        )
         if (!forceRefresh && listCache.isFresh(key)) {
-            peekEpisodes(key)?.let { return RepositoryResult.Success(it) }
+            listCache.get<EpisodesResponse>(key)?.first?.let { cached ->
+                return RepositoryResult.Success(
+                    FeedPage(
+                        episodes = cached.episodes,
+                        libraryEmpty = cached.libraryEmpty == true,
+                        feedHiddenOnly = cached.feedHiddenOnly == true
+                    )
+                )
+            }
         }
         val response = apiService.getFilteredEpisodes(
             page = page,
@@ -426,28 +568,140 @@ class MicahPodRepository(
             podcastId = podcastId,
             tag = tag,
             query = query,
+            played = played,
             recommended = if (recommended) "1" else null
         )
         if (response.isSuccessful) {
             val body = response.body()
             if (body != null) {
                 listCache.put(key, gson.toJson(body))
-                return RepositoryResult.Success(body.episodes)
+                return RepositoryResult.Success(
+                    FeedPage(
+                        episodes = body.episodes,
+                        libraryEmpty = body.libraryEmpty == true,
+                        feedHiddenOnly = body.feedHiddenOnly == true
+                    )
+                )
             }
         }
-        return peekEpisodes(key)?.let { RepositoryResult.Success(it) }
-            ?: RepositoryResult.Error("Unable to load episodes")
+        listCache.get<EpisodesResponse>(key)?.first?.let { cached ->
+            return RepositoryResult.Success(
+                FeedPage(
+                    episodes = cached.episodes,
+                    libraryEmpty = cached.libraryEmpty == true,
+                    feedHiddenOnly = cached.feedHiddenOnly == true
+                )
+            )
+        }
+        return RepositoryResult.Error("Unable to load episodes")
     }
 
     suspend fun postComment(episodeId: Int, body: String, parentId: Int? = null): RepositoryResult<Unit> {
-        val payload = mutableMapOf<String, String>(
+        ensureCsrfToken()
+        val payload = mutableMapOf(
+            "action" to "create",
             "episode_id" to episodeId.toString(),
             "body" to body
         )
         if (parentId != null) payload["parent_id"] = parentId.toString()
         val response = apiService.postComment(payload)
-        return if (response.isSuccessful) RepositoryResult.Success(Unit)
-        else RepositoryResult.Error("Failed to post comment")
+        if (response.isSuccessful) {
+            return RepositoryResult.Success(Unit)
+        }
+        val err = runCatching {
+            gson.fromJson(response.errorBody()?.string().orEmpty(), Map::class.java)["error"]?.toString()
+        }.getOrNull()
+        return RepositoryResult.Error(err ?: "Failed to post comment (${response.code()})")
+    }
+
+    suspend fun fetchAdminStats(): RepositoryResult<com.circpros.micahpod.data.AdminStats> {
+        ensureCsrfToken()
+        val response = withAuthRetry { apiService.getAdminStats() }
+        if (!response.isSuccessful) {
+            return RepositoryResult.Error(
+                if (response.code() == 403) "Admin access required" else "Unable to load stats (${response.code()})"
+            )
+        }
+        val parsed = runCatching {
+            gson.fromJson(response.body()?.string().orEmpty(), com.circpros.micahpod.data.AdminStatsResponse::class.java)
+        }.getOrNull()?.stats
+        return if (parsed != null) RepositoryResult.Success(parsed)
+        else RepositoryResult.Error("Unable to parse admin stats")
+    }
+
+    suspend fun refreshAllFeeds(): RepositoryResult<String> {
+        ensureCsrfToken()
+        val response = withAuthRetry { longApiService.refreshAllFeeds() }
+        return parseAdminActionResponse(response, "Feed refresh failed")
+    }
+
+    suspend fun recomputeRecommendations(): RepositoryResult<String> {
+        ensureCsrfToken()
+        val response = withAuthRetry { longApiService.postAdminAction("recompute") }
+        return parseAdminActionResponse(response, "Recompute failed")
+    }
+
+    suspend fun extractTags(): RepositoryResult<String> {
+        ensureCsrfToken()
+        val response = withAuthRetry { longApiService.postAdminAction("extract_tags") }
+        return parseAdminActionResponse(response, "Tag extraction failed")
+    }
+
+    suspend fun fetchDigestLog(): RepositoryResult<String> {
+        ensureCsrfToken()
+        val response = withAuthRetry { apiService.getDigestLog() }
+        if (!response.isSuccessful) {
+            return RepositoryResult.Error("Unable to load digest log (${response.code()})")
+        }
+        val json = response.body()?.string().orEmpty()
+        val root = runCatching {
+            com.google.gson.JsonParser.parseString(json).asJsonObject
+        }.getOrNull() ?: return RepositoryResult.Error("Unable to parse digest log")
+        val rows = root.getAsJsonArray("digest_log") ?: return RepositoryResult.Success("No digest entries.")
+        if (rows.size() == 0) return RepositoryResult.Success("No digest entries.")
+        val lines = rows.take(40).map { el ->
+            val o = el.asJsonObject
+            val sent = o.get("sent_at")?.asString ?: "-"
+            val email = o.get("email")?.asString ?: "user ${o.get("user_id")?.asString ?: "?"}"
+            val count = o.get("episode_count")?.asString ?: "?"
+            "$sent  $email  ($count eps)"
+        }
+        return RepositoryResult.Success(lines.joinToString("\n"))
+    }
+
+    private fun parseAdminActionResponse(
+        response: retrofit2.Response<ResponseBody>,
+        fallback: String
+    ): RepositoryResult<String> {
+        val json = response.body()?.string().orEmpty()
+        if (!response.isSuccessful) {
+            val err = runCatching {
+                gson.fromJson(json, com.circpros.micahpod.data.AdminActionResponse::class.java)?.error
+            }.getOrNull()
+            return RepositoryResult.Error(err ?: "$fallback (${response.code()})")
+        }
+        val parsed = runCatching {
+            gson.fromJson(json, com.circpros.micahpod.data.AdminActionResponse::class.java)
+        }.getOrNull()
+        val parts = mutableListOf<String>()
+        parsed?.output?.takeIf { it.isNotBlank() }?.let { parts += it }
+        parsed?.message?.takeIf { it.isNotBlank() }?.let { parts += it }
+        if (parsed?.episodesProcessed != null || parsed?.tagsInserted != null) {
+            parts += "Episodes processed: ${parsed.episodesProcessed ?: 0}, tags inserted: ${parsed.tagsInserted ?: 0}"
+        }
+        if (parsed?.profiles != null || parsed?.scores != null) {
+            parts += "Profiles: ${parsed.profiles ?: 0}, scores: ${parsed.scores ?: 0}"
+        }
+        if (parsed?.scoredUsers != null) {
+            parts += "Scored users: ${parsed.scoredUsers}"
+        }
+        if (parsed?.newEpisodeIds != null) {
+            parts += "New episodes: ${parsed.newEpisodeIds.size}"
+        }
+        if (parts.isEmpty() && json.isNotBlank()) {
+            parts += json.take(2000)
+        }
+        return RepositoryResult.Success(parts.joinToString("\n").ifBlank { "Done." })
     }
 
     private suspend fun ensureCsrfToken(): RepositoryResult<Unit> {

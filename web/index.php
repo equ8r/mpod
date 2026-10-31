@@ -10,7 +10,7 @@ $csrf = csrf_token();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars($csrf) ?>">
     <title>MicahPod</title>
-    <link rel="stylesheet" href="css/style.css?v=20260825a">
+    <link rel="stylesheet" href="css/style.css?v=20261008d">
 </head>
 <body>
     <header class="topbar">
@@ -54,13 +54,21 @@ $csrf = csrf_token();
             </select>
             <select id="filter-sort">
                 <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="unplayed">Unplayed first</option>
+                <option value="played">Played first</option>
                 <option value="rating">Top Rated</option>
                 <option value="recommended">Recommended</option>
             </select>
             <select id="filter-rated">
-                <option value="">All</option>
+                <option value="">All ratings</option>
                 <option value="1">Rated</option>
                 <option value="0">Unrated</option>
+            </select>
+            <select id="filter-played">
+                <option value="">All episodes</option>
+                <option value="0">Unplayed</option>
+                <option value="1">Played</option>
             </select>
             <label class="toggle">
                 <input type="checkbox" id="filter-recommended">
@@ -72,6 +80,15 @@ $csrf = csrf_token();
                 <span>Show All Episodes</span>
             </label>
             <?php endif; ?>
+            <label class="layout-control" for="filter-columns">
+                <span>Columns</span>
+                <select id="filter-columns" aria-label="Episode grid columns">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </label>
             <?php if ($user): ?>
             <button id="refresh-main" class="btn btn-small refresh-button" type="button">⟳ Refresh</button>
             <span id="refresh-status" class="muted"></span>
@@ -84,9 +101,26 @@ $csrf = csrf_token();
                     <h2>My Podcasts</h2>
                     <span id="subscription-count-panel" class="subscription-count-badge">0</span>
                 </div>
-                <button id="subscription-close" class="btn btn-small" type="button">Close</button>
+                <div class="subscription-header-actions">
+                    <a class="btn btn-small btn-primary" href="settings.php#library">Manage library</a>
+                    <button id="subscription-close" class="btn btn-small" type="button">Close</button>
+                </div>
             </div>
+            <p class="muted subscription-intro">Featured shows you can follow. Manage hide-from-feed and removals in Settings.</p>
             <div id="subscription-grid" class="subscription-grid"></div>
+            <div id="community-podcasts" class="community-podcasts hidden">
+                <h3>Other people like</h3>
+                <p class="muted">Popular shows added by listeners — not part of our featured catalog.</p>
+                <div id="community-grid" class="subscription-grid"></div>
+            </div>
+        </section>
+        <section id="empty-library-cta" class="empty-library-cta hidden">
+            <h2>Your feed is ready for something new</h2>
+            <p>Looks like your library is empty. Add a featured show, discover what others are listening to, or bring your own feed.</p>
+            <div class="empty-library-actions">
+                <button type="button" class="btn btn-primary" id="cta-open-podcasts">Browse featured podcasts</button>
+                <a class="btn btn-secondary" href="settings.php#library">Add a podcast</a>
+            </div>
         </section>
         <section id="continue-listening" class="continue-listening hidden">
             <div class="continue-listening-header">
@@ -104,7 +138,7 @@ $csrf = csrf_token();
                     <div id="podcast-focus-meta" class="podcast-focus-meta muted"></div>
                 </div>
             </div>
-            <button id="podcast-focus-clear" class="btn btn-small" type="button">Show All</button>
+            <button id="podcast-focus-clear" class="btn btn-small" type="button">Back to feed</button>
         </section>
         <?php endif; ?>
 
@@ -268,7 +302,7 @@ $csrf = csrf_token();
         };
     </script>
     <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
-    <script src="js/player.js?v=20260813b"></script>
-    <script src="js/app.js?v=20260813b"></script>
+    <script src="js/player.js?v=20260907a"></script>
+    <script src="js/app.js?v=20261008d"></script>
 </body>
 </html>

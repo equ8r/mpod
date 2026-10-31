@@ -419,14 +419,34 @@ function site_url(): string {
     return "{$scheme}://{$host}{$path}";
 }
 
-function refresh_podcast_feeds(?int $podcastId = null): array {
+/**
+ * Refresh podcast feeds.
+ * @param int|null $podcastId Force a single podcast (ignores follower/tier filters).
+ * @param bool $scheduled When true (cron), only refresh followed shows; non-curated at most every 4 hours.
+ */
+function refresh_podcast_feeds(?int $podcastId = null, bool $scheduled = false): array {
     $pdo = db();
     if ($podcastId) {
-        $stmt = $pdo->prepare("SELECT id, title, feed_url, last_new_episode, etag, last_modified FROM podcasts WHERE id = ? AND active = 1 AND feed_url IS NOT NULL");
+        $stmt = $pdo->prepare("SELECT id, title, feed_url, last_new_episode, etag, last_modified, curated FROM podcasts WHERE id = ? AND active = 1 AND feed_url IS NOT NULL");
         $stmt->execute([$podcastId]);
         $shows = $stmt->fetchAll();
+    } elseif ($scheduled) {
+        // Followed shows only. Curated: every run. Non-curated: ~1/4 cadence (4h since last check).
+        $shows = $pdo->query(
+            "SELECT p.id, p.title, p.feed_url, p.last_new_episode, p.etag, p.last_modified, p.curated
+             FROM podcasts p
+             WHERE p.active = 1
+               AND p.feed_url IS NOT NULL
+               AND EXISTS (SELECT 1 FROM user_subscriptions us WHERE us.podcast_id = p.id)
+               AND (
+                    COALESCE(p.curated, 1) = 1
+                    OR p.last_checked IS NULL
+                    OR p.last_checked < DATE_SUB(NOW(), INTERVAL 4 HOUR)
+               )
+             ORDER BY COALESCE(p.curated, 1) DESC, p.last_checked ASC"
+        )->fetchAll();
     } else {
-        $shows = $pdo->query("SELECT id, title, feed_url, last_new_episode, etag, last_modified FROM podcasts WHERE active = 1 AND feed_url IS NOT NULL")->fetchAll();
+        $shows = $pdo->query("SELECT id, title, feed_url, last_new_episode, etag, last_modified, curated FROM podcasts WHERE active = 1 AND feed_url IS NOT NULL")->fetchAll();
     }
 
     if (empty($shows)) {

@@ -75,4 +75,9 @@ object LocalPlaybackBookmark {
     fun clear(context: Context) {
         prefs(context).edit().clear().apply()
     }
+
+    fun clearEpisode(context: Context, episodeId: Int) {
+        val current = read(context) ?: return
+        if (current.episodeId == episodeId) clear(context)
+    }
 }

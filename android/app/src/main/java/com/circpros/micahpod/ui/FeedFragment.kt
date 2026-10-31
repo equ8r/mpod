@@ -7,18 +7,22 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.circpros.micahpod.R
 import com.circpros.micahpod.data.Episode
 import com.circpros.micahpod.data.ServiceLocator
 import com.circpros.micahpod.data.TimedListCache
 import com.circpros.micahpod.databinding.FragmentFeedBinding
+import com.circpros.micahpod.playback.LocalPlaybackBookmark
 import com.circpros.micahpod.playback.PlaybackHelper
 import com.circpros.micahpod.repository.MicahPodRepository
 import com.circpros.micahpod.repository.RepositoryResult
@@ -38,11 +42,13 @@ class FeedFragment : Fragment() {
     private var currentQuery: String? = null
     private var recommendedOnly = false
     private var continueOnly = false
+    private var playedFilter: String? = null
 
     private val adapter = FeedAdapter(
         onEpisodeClick = { episode ->
             if (continueOnly) resumeEpisode(episode) else openEpisodeDetail(episode)
-        }
+        },
+        onMarkComplete = { episode -> confirmMarkComplete(episode) }
     )
 
     override fun onCreateView(
@@ -56,16 +62,22 @@ class FeedFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.feedRecycler.layoutManager = LinearLayoutManager(requireContext())
         binding.feedRecycler.adapter = adapter
-        binding.feedSwipeRefresh.setOnRefreshListener { loadFeed(forceRefresh = true) }
+        ItemTouchHelper(ContinueSwipeCallback(isEnabled = { continueOnly }))
+            .attachToRecyclerView(binding.feedRecycler)
+        binding.feedSwipeRefresh.setOnRefreshListener {
+            loadFeed(forceRefresh = true, showSpinner = true)
+        }
+        // DiffUtil + ItemTouchHelper often crash with "Inconsistency detected" if an
+        // item animator runs mid-swipe during a feed refresh.
+        binding.feedRecycler.itemAnimator = null
 
         binding.searchInput.addTextChangedListener {
             searchRunnable?.let { handler.removeCallbacks(it) }
             searchRunnable = Runnable {
                 currentQuery = it?.toString()?.trim()?.takeIf { q -> q.isNotEmpty() }
-                if (continueOnly) {
-                    continueOnly = false
-                    binding.chipContinue.isChecked = false
-                    binding.chipNewest.isChecked = true
+                if (continueOnly || playedFilter != null) {
+                    selectChip(sort = "newest")
+                    return@Runnable
                 }
                 loadFeed()
             }
@@ -81,53 +93,87 @@ class FeedFragment : Fragment() {
         }
 
         binding.chipContinue.setOnClickListener {
-            continueOnly = true
-            recommendedOnly = false
-            currentSort = "newest"
-            binding.chipNewest.isChecked = false
-            binding.chipOldest.isChecked = false
-            binding.chipRecommended.isChecked = false
-            binding.chipContinue.isChecked = true
-            loadFeed()
+            selectChip(continueMode = true)
         }
         binding.chipNewest.setOnClickListener {
-            continueOnly = false
-            currentSort = "newest"
-            recommendedOnly = false
-            binding.chipContinue.isChecked = false
-            binding.chipOldest.isChecked = false
-            binding.chipRecommended.isChecked = false
-            binding.chipNewest.isChecked = true
-            loadFeed()
+            selectChip(sort = "newest")
         }
         binding.chipOldest.setOnClickListener {
-            continueOnly = false
-            currentSort = "oldest"
-            recommendedOnly = false
-            binding.chipContinue.isChecked = false
-            binding.chipNewest.isChecked = false
-            binding.chipRecommended.isChecked = false
-            binding.chipOldest.isChecked = true
-            loadFeed()
+            selectChip(sort = "oldest")
         }
         binding.chipRecommended.setOnClickListener {
-            continueOnly = false
-            recommendedOnly = true
-            currentSort = "newest"
-            binding.chipContinue.isChecked = false
-            binding.chipNewest.isChecked = false
-            binding.chipOldest.isChecked = false
-            binding.chipRecommended.isChecked = true
-            loadFeed()
+            selectChip(recommended = true)
+        }
+        binding.chipUnplayed.setOnClickListener {
+            selectChip(sort = "unplayed", played = "0")
+        }
+        binding.chipPlayed.setOnClickListener {
+            selectChip(sort = "played", played = "1")
+        }
+        binding.emptyBrowsePodcasts.setOnClickListener {
+            findNavController().navigate(R.id.podcastListFragment)
+        }
+        binding.emptyOpenSettings.setOnClickListener {
+            findNavController().navigate(R.id.settingsFragment)
         }
 
         loadFeed()
     }
 
+    private fun selectChip(
+        sort: String = "newest",
+        recommended: Boolean = false,
+        continueMode: Boolean = false,
+        played: String? = null
+    ) {
+        continueOnly = continueMode
+        recommendedOnly = recommended
+        currentSort = sort
+        playedFilter = played
+        adapter.continueMode = continueMode
+        binding.chipContinue.isChecked = continueMode
+        binding.chipNewest.isChecked = !continueMode && !recommended && played == null && sort == "newest"
+        binding.chipOldest.isChecked = !continueMode && !recommended && played == null && sort == "oldest"
+        binding.chipRecommended.isChecked = recommended
+        binding.chipUnplayed.isChecked = played == "0"
+        binding.chipPlayed.isChecked = played == "1"
+        loadFeed()
+    }
+
+    private fun confirmMarkComplete(episode: Episode) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.mark_complete_confirm_title)
+            .setMessage(R.string.mark_complete_confirm_body)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.mark_complete) { _, _ -> markComplete(episode) }
+            .show()
+    }
+
+    private fun markComplete(episode: Episode) {
+        val id = episode.resolvedId()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.markPlayed(id)
+            }
+            if (_binding == null) return@launch
+            when (result) {
+                is RepositoryResult.Success -> {
+                    LocalPlaybackBookmark.clearEpisode(requireContext(), id)
+                    Toast.makeText(requireContext(), R.string.marked_played, Toast.LENGTH_SHORT).show()
+                    loadFeed(forceRefresh = true)
+                }
+                is RepositoryResult.Error -> {
+                    Toast.makeText(requireContext(), result.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        // Soft refresh only when Continue (changes often) or cache is stale.
-        loadFeed(forceRefresh = false)
+        // Soft background refresh when cache is stale — no swipe spinner (avoids
+        // "refreshing then crash" from ItemTouchHelper + list diff races).
+        loadFeed(forceRefresh = false, showSpinner = false)
     }
 
     override fun onDestroyView() {
@@ -140,13 +186,14 @@ class FeedFragment : Fragment() {
         sort = currentSort,
         query = currentQuery,
         recommended = recommendedOnly,
-        continueOnly = continueOnly
+        continueOnly = continueOnly,
+        played = playedFilter
     )
 
     private fun currentTtlMs(): Long =
         if (continueOnly) TimedListCache.TTL_CONTINUE_MS else TimedListCache.TTL_DEFAULT_MS
 
-    private fun loadFeed(forceRefresh: Boolean = false) {
+    private fun loadFeed(forceRefresh: Boolean = false, showSpinner: Boolean = forceRefresh) {
         val cacheKey = currentCacheKey()
         val generation = ++loadGeneration
         val cached = repository.peekEpisodes(cacheKey)
@@ -160,7 +207,7 @@ class FeedFragment : Fragment() {
                 binding.feedSwipeRefresh.isRefreshing = false
                 return
             }
-            binding.feedSwipeRefresh.isRefreshing = true
+            binding.feedSwipeRefresh.isRefreshing = showSpinner
         } else {
             binding.feedProgress.isVisible = true
             binding.feedRecycler.isVisible = false
@@ -171,26 +218,36 @@ class FeedFragment : Fragment() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 when {
-                    continueOnly -> repository.getInProgress(50, forceRefresh = true)
-                    currentQuery != null || recommendedOnly || currentSort != "newest" -> {
-                        repository.getFilteredFeed(
-                            sort = currentSort,
-                            query = currentQuery,
-                            recommended = recommendedOnly,
-                            forceRefresh = true
-                        )
+                    continueOnly -> repository.getInProgress(50, forceRefresh = true).let { r ->
+                        when (r) {
+                            is RepositoryResult.Success -> RepositoryResult.Success(
+                                com.circpros.micahpod.data.FeedPage(episodes = r.data)
+                            )
+                            is RepositoryResult.Error -> RepositoryResult.Error(r.message)
+                        }
                     }
-                    else -> repository.getFeed(forceRefresh = true)
+                    else -> repository.getFilteredFeed(
+                        sort = currentSort,
+                        query = currentQuery,
+                        recommended = recommendedOnly,
+                        played = playedFilter,
+                        forceRefresh = true
+                    )
                 }
             }
             if (_binding == null || generation != loadGeneration) return@launch
             when (result) {
-                is RepositoryResult.Success -> showEpisodes(result.data)
+                is RepositoryResult.Success -> showEpisodes(
+                    result.data.episodes,
+                    libraryEmpty = result.data.libraryEmpty,
+                    feedHiddenOnly = result.data.feedHiddenOnly
+                )
                 is RepositoryResult.Error -> {
                     if (adapter.itemCount == 0) {
                         binding.feedError.text = result.message
                         binding.feedError.isVisible = true
                         binding.feedRecycler.isVisible = false
+                        binding.emptyLibraryCta.isVisible = false
                     }
                 }
             }
@@ -199,22 +256,62 @@ class FeedFragment : Fragment() {
         }
     }
 
-    private fun showEpisodes(episodes: List<Episode>) {
+    private fun showEpisodes(
+        episodes: List<Episode>,
+        libraryEmpty: Boolean = false,
+        feedHiddenOnly: Boolean = false
+    ) {
         val resolved = episodes.map { ep ->
             val id = ep.resolvedId()
             ep.copy(id = id).also { ServiceLocator.episodeCache[id] = it }
         }
-        adapter.submitList(resolved)
-        binding.feedRecycler.isVisible = true
-        if (resolved.isEmpty()) {
+        // Clear any in-progress swipe reveals before DiffUtil runs.
+        for (i in 0 until binding.feedRecycler.childCount) {
+            val child = binding.feedRecycler.getChildAt(i) ?: continue
+            val vh = binding.feedRecycler.getChildViewHolder(child)
+            adapter.resetReveal(vh)
+        }
+        adapter.continueMode = continueOnly
+        try {
+            adapter.submitList(resolved)
+        } catch (t: Throwable) {
+            // Last-resort recovery from rare RecyclerView inconsistency crashes.
+            android.util.Log.e("FeedFragment", "submitList failed; resetting adapter", t)
+            binding.feedRecycler.adapter = null
+            binding.feedRecycler.adapter = adapter
+            adapter.submitList(resolved)
+        }
+        binding.feedRecycler.isVisible = resolved.isNotEmpty()
+        if (resolved.isNotEmpty()) {
+            binding.feedError.isVisible = false
+            binding.emptyLibraryCta.isVisible = false
+            return
+        }
+
+        val defaultEmpty = !continueOnly && playedFilter == null && currentQuery == null
+        if (defaultEmpty && (libraryEmpty || feedHiddenOnly || resolved.isEmpty())) {
+            binding.emptyLibraryTitle.text = if (feedHiddenOnly) {
+                getString(R.string.feed_hidden_title)
+            } else {
+                getString(R.string.empty_library_title)
+            }
+            binding.emptyLibraryBody.text = if (feedHiddenOnly) {
+                getString(R.string.feed_hidden_body)
+            } else {
+                getString(R.string.empty_library_body)
+            }
+            binding.emptyLibraryCta.isVisible = true
+            binding.feedError.isVisible = false
+        } else {
+            binding.emptyLibraryCta.isVisible = false
             binding.feedError.text = when {
                 continueOnly -> "Nothing in progress. Play an episode to see it here."
+                playedFilter == "0" -> "No unplayed episodes found."
+                playedFilter == "1" -> "No played episodes found."
                 currentQuery != null -> "No results for \"$currentQuery\""
-                else -> "No episodes yet. Subscribe to some podcasts!"
+                else -> getString(R.string.empty_library_body)
             }
             binding.feedError.isVisible = true
-        } else {
-            binding.feedError.isVisible = false
         }
     }
 

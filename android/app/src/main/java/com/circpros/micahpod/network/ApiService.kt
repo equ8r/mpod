@@ -1,6 +1,8 @@
 package com.circpros.micahpod.network
 
+import com.circpros.micahpod.data.AddPodcastResponse
 import com.circpros.micahpod.data.EpisodesResponse
+import com.circpros.micahpod.data.ItunesSearchResponse
 import com.circpros.micahpod.data.LoginResponse
 import com.circpros.micahpod.data.PodcastsResponse
 import com.circpros.micahpod.data.SubscriptionsResponse
@@ -16,8 +18,24 @@ interface ApiService {
     @POST("users.php?action=login")
     suspend fun login(@Body body: Map<String, String>): Response<LoginResponse>
 
+    @GET("users.php")
+    suspend fun getMe(@Query("action") action: String = "me"): Response<LoginResponse>
+
     @GET("podcasts.php")
-    suspend fun getPodcasts(): Response<PodcastsResponse>
+    suspend fun getPodcasts(
+        @Query("catalog") catalog: String? = "curated"
+    ): Response<PodcastsResponse>
+
+    @GET("podcasts.php")
+    suspend fun getCommunityPodcasts(
+        @Query("action") action: String = "community"
+    ): Response<PodcastsResponse>
+
+    @POST("podcasts.php")
+    suspend fun addUserPodcast(
+        @Query("action") action: String = "add_user",
+        @Body body: Map<String, String>
+    ): Response<AddPodcastResponse>
 
     @GET("subscriptions.php")
     suspend fun getSubscriptions(): Response<SubscriptionsResponse>
@@ -29,7 +47,12 @@ interface ApiService {
     suspend fun getEpisodeById(@Query("id") id: Int): Response<ResponseBody>
 
     @GET("episodes.php")
-    suspend fun getEpisodes(@Query("podcast_id") podcastId: String): Response<EpisodesResponse>
+    suspend fun getEpisodes(
+        @Query("podcast_id") podcastId: String,
+        @Query("page") page: Int = 1,
+        @Query("per_page") perPage: Int = 50,
+        @Query("sort") sort: String = "newest"
+    ): Response<EpisodesResponse>
 
     @GET("episodes.php")
     suspend fun getFeed(@Query("per_page") perPage: Int = 50): Response<EpisodesResponse>
@@ -68,7 +91,7 @@ interface ApiService {
     ): Response<ResponseBody>
 
     @GET("search.php")
-    suspend fun search(@Query("q") query: String): Response<EpisodesResponse>
+    suspend fun searchPodcasts(@Query("q") query: String): Response<ItunesSearchResponse>
 
     @GET("episodes.php")
     suspend fun getFilteredEpisodes(
@@ -79,6 +102,7 @@ interface ApiService {
         @Query("tag") tag: String? = null,
         @Query("q") query: String? = null,
         @Query("rated") rated: String? = null,
+        @Query("played") played: String? = null,
         @Query("recommended") recommended: String? = null
     ): Response<EpisodesResponse>
 
@@ -87,4 +111,22 @@ interface ApiService {
 
     @POST("playback_log.php?beacon=1")
     suspend fun submitPlaybackLog(@Body body: Map<String, String>): Response<ResponseBody>
+
+    @GET("admin.php")
+    suspend fun getAdminStats(@Query("action") action: String = "stats"): Response<ResponseBody>
+
+    @GET("admin.php")
+    suspend fun getDigestLog(@Query("action") action: String = "digest_log"): Response<ResponseBody>
+
+    @POST("admin.php")
+    suspend fun postAdminAction(
+        @Query("action") action: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): Response<ResponseBody>
+
+    @POST("podcasts.php")
+    suspend fun refreshAllFeeds(
+        @Query("action") action: String = "refresh_all",
+        @Body body: Map<String, String> = emptyMap()
+    ): Response<ResponseBody>
 }

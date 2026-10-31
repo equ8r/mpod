@@ -45,17 +45,24 @@ $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 if ($id) {
     $stmt = $pdo->prepare(
         "SELECT e.*, p.title AS podcast_title, p.artwork_url AS podcast_artwork,
-                er.rating AS user_rating, rs.score AS rec_score, rs.factors_json
+                er.rating AS user_rating, rs.score AS rec_score, rs.factors_json,
+                COALESCE(uep.completed, 0) AS completed,
+                uep.position_seconds AS position_seconds
          FROM episodes e
          JOIN podcasts p ON p.id = e.podcast_id
          LEFT JOIN episode_ratings er ON er.episode_id = e.id AND er.user_id = ?
          LEFT JOIN recommendation_scores rs ON rs.episode_id = e.id AND rs.user_id = ?
+         LEFT JOIN user_episode_progress uep ON uep.episode_id = e.id AND uep.user_id = ?
          WHERE e.id = ? AND p.active = 1"
     );
-    $stmt->execute([$userId, $userId, $id]);
+    $stmt->execute([$userId, $userId, $userId, $id]);
     $episode = $stmt->fetch();
     if (!$episode) {
         json_response(['error' => 'Not found'], 404);
+    }
+    $episode['completed'] = (int)($episode['completed'] ?? 0);
+    if ($episode['position_seconds'] !== null) {
+        $episode['position_seconds'] = (float)$episode['position_seconds'];
     }
     $tagStmt = $pdo->prepare(
         "SELECT t.id, t.name, t.type, et.source, et.confidence
@@ -74,12 +81,15 @@ $sort = $_GET['sort'] ?? 'newest';
 $podcastId = isset($_GET['podcast_id']) ? (int)$_GET['podcast_id'] : null;
 $tag = $_GET['tag'] ?? null;
 $rated = $_GET['rated'] ?? null;
+$played = $_GET['played'] ?? null;
 $recommended = $_GET['recommended'] ?? null;
 $showAll = ($_GET['show_all'] ?? '0') === '1';
 $search = trim($_GET['q'] ?? '');
 
 $where = [];
-$params = [$userId, $userId];
+$params = [$userId, $userId, $userId];
+$libraryEmpty = false;
+$feedHiddenOnly = false;
 
 $where[] = 'p.active = 1';
 
@@ -91,9 +101,34 @@ if ($userId && !$podcastId && !$showAll) {
     $subCountStmt = $pdo->prepare("SELECT COUNT(*) FROM user_subscriptions WHERE user_id = ?");
     $subCountStmt->execute([$userId]);
     $subCount = (int)$subCountStmt->fetchColumn();
-    if ($subCount > 0) {
-        $where[] = 'e.podcast_id IN (SELECT podcast_id FROM user_subscriptions WHERE user_id = ?)';
-        $params[] = $userId;
+    if ($subCount === 0) {
+        // Empty library → empty feed (no longer falls back to the full catalog).
+        $where[] = '1 = 0';
+        $libraryEmpty = true;
+    } else {
+        $hasFeedFlag = true;
+        try {
+            $pdo->query('SELECT include_in_feed FROM user_subscriptions LIMIT 1');
+        } catch (Throwable $e) {
+            $hasFeedFlag = false;
+        }
+        if ($hasFeedFlag) {
+            $feedCountStmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM user_subscriptions WHERE user_id = ? AND include_in_feed = 1"
+            );
+            $feedCountStmt->execute([$userId]);
+            $feedCount = (int)$feedCountStmt->fetchColumn();
+            if ($feedCount === 0) {
+                $where[] = '1 = 0';
+                $feedHiddenOnly = true;
+            } else {
+                $where[] = 'e.podcast_id IN (SELECT podcast_id FROM user_subscriptions WHERE user_id = ? AND include_in_feed = 1)';
+                $params[] = $userId;
+            }
+        } else {
+            $where[] = 'e.podcast_id IN (SELECT podcast_id FROM user_subscriptions WHERE user_id = ?)';
+            $params[] = $userId;
+        }
     }
 }
 if ($search !== '') {
@@ -108,6 +143,12 @@ if ($rated === '1') {
 }
 if ($rated === '0') {
     $where[] = 'er.rating IS NULL';
+}
+if ($played === '1') {
+    $where[] = 'COALESCE(uep.completed, 0) = 1';
+}
+if ($played === '0') {
+    $where[] = 'COALESCE(uep.completed, 0) = 0';
 }
 if ($recommended === '1') {
     $where[] = 'rs.score >= 0.7';
@@ -125,10 +166,16 @@ if ($tag) {
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $sortSql = 'e.pub_date DESC';
-if ($sort === 'rating') {
+if ($sort === 'oldest') {
+    $sortSql = 'e.pub_date ASC';
+} elseif ($sort === 'rating') {
     $sortSql = '(er.rating IS NULL) ASC, er.rating DESC, e.pub_date DESC';
 } elseif ($sort === 'recommended') {
     $sortSql = '(rs.score IS NULL) ASC, rs.score DESC, e.pub_date DESC';
+} elseif ($sort === 'unplayed') {
+    $sortSql = 'COALESCE(uep.completed, 0) ASC, e.pub_date DESC';
+} elseif ($sort === 'played') {
+    $sortSql = 'COALESCE(uep.completed, 0) DESC, e.pub_date DESC';
 }
 
 $offset = ($page - 1) * $perPage;
@@ -138,6 +185,7 @@ $countSql = "SELECT COUNT(DISTINCT e.id)
              JOIN podcasts p ON p.id = e.podcast_id
              LEFT JOIN episode_ratings er ON er.episode_id = e.id AND er.user_id = ?
              LEFT JOIN recommendation_scores rs ON rs.episode_id = e.id AND rs.user_id = ?
+             LEFT JOIN user_episode_progress uep ON uep.episode_id = e.id AND uep.user_id = ?
              LEFT JOIN episode_tags et ON et.episode_id = e.id
              LEFT JOIN tags t ON t.id = et.tag_id
              {$whereSql}";
@@ -147,11 +195,14 @@ $countStmt->execute($params);
 $total = (int)$countStmt->fetchColumn();
 
 $sql = "SELECT DISTINCT e.*, p.title AS podcast_title, p.artwork_url AS podcast_artwork,
-               er.rating AS user_rating, rs.score AS rec_score, rs.factors_json
+               er.rating AS user_rating, rs.score AS rec_score, rs.factors_json,
+               COALESCE(uep.completed, 0) AS completed,
+               uep.position_seconds AS position_seconds
         FROM episodes e
         JOIN podcasts p ON p.id = e.podcast_id
         LEFT JOIN episode_ratings er ON er.episode_id = e.id AND er.user_id = ?
         LEFT JOIN recommendation_scores rs ON rs.episode_id = e.id AND rs.user_id = ?
+        LEFT JOIN user_episode_progress uep ON uep.episode_id = e.id AND uep.user_id = ?
         LEFT JOIN episode_tags et ON et.episode_id = e.id
         LEFT JOIN tags t ON t.id = et.tag_id
         {$whereSql}
@@ -183,7 +234,12 @@ if ($episodes) {
     foreach ($episodes as &$episode) {
         $eid = (int)$episode['id'];
         $episode['tags'] = $tagsByEpisode[$eid] ?? [];
+        $episode['completed'] = (int)($episode['completed'] ?? 0);
+        if ($episode['position_seconds'] !== null) {
+            $episode['position_seconds'] = (float)$episode['position_seconds'];
+        }
     }
+    unset($episode);
 }
 
 json_response([
@@ -191,4 +247,6 @@ json_response([
     'page' => $page,
     'per_page' => $perPage,
     'total' => $total,
+    'library_empty' => $libraryEmpty,
+    'feed_hidden_only' => $feedHiddenOnly,
 ]);

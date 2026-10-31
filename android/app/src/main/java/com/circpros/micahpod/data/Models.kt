@@ -10,7 +10,14 @@ data class Podcast(
     val artworkUrl: String?,
     val author: String?,
     @SerializedName("episode_count")
-    val episodeCount: Int
+    val episodeCount: Int = 0,
+    @SerializedName("feed_url")
+    val feedUrl: String? = null,
+    val curated: Int? = 1,
+    @SerializedName("subscriber_count")
+    val subscriberCount: Int? = null,
+    @SerializedName("latest_episode")
+    val latestEpisode: String? = null
 )
 
 data class Episode(
@@ -55,7 +62,16 @@ data class Subscription(
     val id: Int,
     val title: String?,
     @SerializedName("artwork_url")
-    val artworkUrl: String?
+    val artworkUrl: String?,
+    val description: String? = null,
+    val author: String? = null,
+    val curated: Int? = 1,
+    @SerializedName("include_in_feed")
+    val includeInFeed: Int? = 1,
+    @SerializedName("episode_count")
+    val episodeCount: Int? = 0,
+    @SerializedName("feed_url")
+    val feedUrl: String? = null
 )
 
 data class PlayerState(
@@ -160,11 +176,66 @@ data class PodcastsResponse(
 )
 
 data class EpisodesResponse(
-    val episodes: List<Episode>
+    val episodes: List<Episode>,
+    @SerializedName("library_empty")
+    val libraryEmpty: Boolean? = false,
+    @SerializedName("feed_hidden_only")
+    val feedHiddenOnly: Boolean? = false,
+    val page: Int? = null,
+    @SerializedName("per_page")
+    val perPage: Int? = null,
+    val total: Int? = null
 )
+
+data class FeedPage(
+    val episodes: List<Episode>,
+    val libraryEmpty: Boolean = false,
+    val feedHiddenOnly: Boolean = false
+)
+
+data class EpisodesPage(
+    val episodes: List<Episode>,
+    val page: Int = 1,
+    val perPage: Int = 50,
+    val total: Int = 0
+) {
+    val hasMore: Boolean
+        get() = page * perPage < total
+}
 
 data class SubscriptionsResponse(
     val subscriptions: List<Subscription>
+)
+
+data class ItunesSearchResponse(
+    val results: List<ItunesPodcastResult> = emptyList()
+)
+
+data class ItunesPodcastResult(
+    @SerializedName("collectionName")
+    val collectionName: String? = null,
+    @SerializedName("trackName")
+    val trackName: String? = null,
+    @SerializedName("artistName")
+    val artistName: String? = null,
+    @SerializedName("feedUrl")
+    val feedUrl: String? = null,
+    @SerializedName("artworkUrl600")
+    val artworkUrl600: String? = null,
+    @SerializedName("artworkUrl100")
+    val artworkUrl100: String? = null,
+    @SerializedName("collectionId")
+    val collectionId: Long? = null,
+    @SerializedName("trackId")
+    val trackId: Long? = null
+)
+
+data class AddPodcastResponse(
+    val ok: Boolean? = null,
+    val id: Int? = null,
+    val created: Boolean? = null,
+    val error: String? = null,
+    val podcast: Podcast? = null
 )
 
 data class Tag(
@@ -215,4 +286,37 @@ data class ProgressWriteResponse(
     val reason: String? = null,
     val completed: Int? = null,
     val error: String? = null
+)
+
+data class AdminStatsResponse(
+    val stats: AdminStats?
+)
+
+data class AdminStats(
+    @SerializedName("total_episodes")
+    val totalEpisodes: Int? = null,
+    @SerializedName("total_ratings")
+    val totalRatings: Int? = null,
+    @SerializedName("active_users")
+    val activeUsers: Int? = null,
+    @SerializedName("last_refresh")
+    val lastRefresh: String? = null
+)
+
+data class AdminActionResponse(
+    val ok: Boolean? = null,
+    val output: String? = null,
+    val error: String? = null,
+    @SerializedName("episodes_processed")
+    val episodesProcessed: Int? = null,
+    @SerializedName("tags_inserted")
+    val tagsInserted: Int? = null,
+    val profiles: Int? = null,
+    val scores: Int? = null,
+    @SerializedName("new_episode_ids")
+    val newEpisodeIds: List<Int>? = null,
+    @SerializedName("scored_users")
+    val scoredUsers: Int? = null,
+    val refreshed: Int? = null,
+    val message: String? = null
 )
